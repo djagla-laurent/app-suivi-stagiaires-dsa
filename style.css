@@ -1,0 +1,204 @@
+:root {
+  color-scheme: light;
+  --fond: #f2f6ee;
+  --carte: #ffffff;
+  --encre: #1b2a1e;
+  --discret: #5a6e5d;
+  --trait: #d1ddcc;
+  --accent: #2e7035;
+  --accent-fonce: #22552a;
+  --erreur: #a63232;
+  --ok: #2e7035;
+  --texte-bouton: #ffffff;
+}
+
+/* Thème sombre : choisi par l'utilisateur */
+:root[data-theme="sombre"] {
+  color-scheme: dark;
+  --fond: #121a14;
+  --carte: #1b261d;
+  --encre: #e7f0e5;
+  --discret: #9bb09e;
+  --trait: #2f4033;
+  --accent: #6fbf7a;
+  --accent-fonce: #8fd29a;
+  --erreur: #ee8b8b;
+  --ok: #8fd29a;
+  --texte-bouton: #10200f;
+}
+
+/* Thème automatique : suit les préférences de l'appareil */
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="auto"] {
+    color-scheme: dark;
+    --fond: #121a14;
+    --carte: #1b261d;
+    --encre: #e7f0e5;
+    --discret: #9bb09e;
+    --trait: #2f4033;
+    --accent: #6fbf7a;
+    --accent-fonce: #8fd29a;
+    --erreur: #ee8b8b;
+    --ok: #8fd29a;
+    --texte-bouton: #10200f;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--fond);
+  color: var(--encre);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.5;
+}
+
+.page { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+.page.narrow { max-width: 560px; }
+
+h1 { font-size: 1.5rem; margin: 0 0 20px; }
+h2 { font-size: 1.1rem; margin: 0 0 12px; }
+
+.card {
+  background: var(--carte);
+  border: 1px solid var(--trait);
+  border-radius: 8px;
+  padding: 20px;
+}
+
+label { display: block; font-weight: 600; margin-bottom: 14px; }
+
+input, select, button {
+  font: inherit;
+  color: inherit;
+}
+
+input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 9px 10px;
+  background: var(--fond);
+  border: 1px solid var(--trait);
+  border-radius: 6px;
+}
+
+input:focus-visible, button:focus-visible, a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.ligne { display: flex; gap: 8px; align-items: flex-end; }
+.ligne label { flex: 1; margin-bottom: 14px; }
+.ligne button { margin-bottom: 14px; }
+
+button {
+  padding: 9px 14px;
+  background: var(--carte);
+  border: 1px solid var(--trait);
+  border-radius: 6px;
+  cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+
+button.principal {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--texte-bouton);
+  font-weight: 600;
+}
+button.principal:hover { background: var(--accent-fonce); }
+button.danger { color: var(--erreur); }
+button:disabled { opacity: 0.6; cursor: wait; }
+
+.message { min-height: 1.5em; margin: 14px 0 0; font-weight: 600; }
+.message.ok { color: var(--ok); }
+.message.erreur { color: var(--erreur); }
+
+.lien { margin-top: 24px; font-size: 0.9rem; }
+a { color: var(--accent); }
+
+/* Espace administrateur */
+.entete { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+.entete h1 { margin: 0; }
+.outils { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 16px; }
+.outils label { margin: 0; font-weight: 500; font-size: 0.9rem; }
+.outils input { width: auto; min-width: 150px; }
+.compteur { color: var(--discret); margin: 0 0 8px; }
+
+.tableau { overflow-x: auto; border: 1px solid var(--trait); border-radius: 8px; background: var(--carte); }
+table { width: 100%; border-collapse: collapse; min-width: 760px; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--trait); white-space: nowrap; }
+th { font-size: 0.85rem; color: var(--discret); font-weight: 600; }
+tr:last-child td { border-bottom: none; }
+td.actions { display: flex; gap: 6px; }
+td.actions button { padding: 5px 10px; font-size: 0.85rem; }
+.vide { padding: 24px; text-align: center; color: var(--discret); }
+
+dialog {
+  border: 1px solid var(--trait);
+  border-radius: 8px;
+  background: var(--carte);
+  color: var(--encre);
+  width: min(460px, 92vw);
+  padding: 20px;
+}
+dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+.boutons { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+
+[hidden] { display: none !important; }
+
+.tableau.compact table { min-width: 0; }
+.barre { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
+.barre h1 { margin: 0; }
+
+/* Application des stages : éléments supplémentaires */
+select, textarea {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 9px 10px;
+  background: var(--fond);
+  border: 1px solid var(--trait);
+  border-radius: 6px;
+}
+textarea { resize: vertical; }
+select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.choix { display: grid; gap: 12px; margin-top: 8px; }
+.choix a {
+  display: block;
+  padding: 18px 20px;
+  background: var(--carte);
+  border: 1px solid var(--trait);
+  border-radius: 8px;
+  color: var(--encre);
+  text-decoration: none;
+  font-weight: 600;
+}
+.choix a span { display: block; font-weight: 400; color: var(--discret); font-size: 0.9rem; margin-top: 2px; }
+.choix a:hover { border-color: var(--accent); }
+
+.etat { font-size: 1.25rem; line-height: 1.5; font-weight: 600; padding: 24px; }
+.code {
+  font-size: 1.6rem; letter-spacing: 0.12em; font-weight: 700; text-align: center;
+  padding: 14px; border: 1px dashed var(--accent); border-radius: 8px; margin: 12px 0;
+}
+.piege { position: absolute; left: -9999px; height: 0; overflow: hidden; }
+td.long { white-space: normal; min-width: 240px; max-width: 360px; }
+.tableau.large table { min-width: 980px; }
+details { margin-top: 20px; }
+summary { cursor: pointer; color: var(--accent); }
+
+/* Sélecteur de thème */
+.theme-btn {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  z-index: 10;
+  padding: 5px 10px;
+  font-size: 0.8rem;
+  border-radius: 999px;
+}
+
