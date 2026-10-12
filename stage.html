@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Informations sur le stage</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="theme.js"></script>
+</head>
+<body>
+  <main class="page narrow">
+    <h1>Informations sur votre stage</h1>
+
+    <section id="vue-form">
+      <form id="form" class="card" autocomplete="off">
+        <label>Nom et prénoms
+          <input id="nom" required maxlength="200">
+        </label>
+        <label>Filière d'étude
+          <input id="filiere" required maxlength="150">
+        </label>
+        <label>Type de stage
+          <select id="type" required>
+            <option value="">— Choisir —</option>
+            <option value="Académique">Stage académique</option>
+            <option value="Professionnel">Stage professionnel</option>
+          </select>
+        </label>
+        <p class="aide">Académique : au moins 1 mois. Professionnel : au moins 3 mois, renouvelable une seule fois.
+          La date de fin est proposée automatiquement ; vous pouvez la reculer si votre stage dure plus longtemps.</p>
+        <div class="ligne">
+          <label>Date de début
+            <input id="debut" type="date" required>
+          </label>
+          <label>Date de fin
+            <input id="fin" type="date" required>
+          </label>
+        </div>
+        <label>But du stage
+          <textarea id="but" rows="4" required maxlength="1000"></textarea>
+        </label>
+        <div class="piege" aria-hidden="true">
+          <label>Ne pas remplir <input id="site" tabindex="-1" autocomplete="off"></label>
+        </div>
+        <button type="submit" id="envoyer" class="principal">Enregistrer mon stage</button>
+        <p id="message" class="message" role="status"></p>
+      </form>
+    </section>
+
+    <section id="vue-code" class="card" hidden>
+      <h2>Votre stage est enregistré</h2>
+      <p>Voici votre code de rattachement. Notez-le : il vous sera demandé pour créer votre compte stagiaire.</p>
+      <p id="code" class="code"></p>
+      <button id="btn-compte" class="principal">Créer mon compte stagiaire</button>
+    </section>
+
+    <p class="lien"><a id="retour" href="index.html">Retour à l'accueil</a></p>
+  </main>
+
+  <script src="supabase.min.js"></script>
+  <script src="config.js"></script>
+  <script src="commun.js"></script>
+  <script>
+    let connecte = false;
+
+    // Connecté : retour vers l'espace et préremplissage pour un renouvellement.
+    (async () => {
+      const { data } = await db.auth.getSession();
+      if (!data.session) return;
+      connecte = true;
+      $("retour").textContent = "Retour à mon espace";
+      $("retour").href = "espace.html";
+      const { data: dernier } = await db.from("stages")
+        .select("nom_prenoms, filiere")
+        .eq("user_id", data.session.user.id)
+        .order("date_debut", { ascending: false })
+        .limit(1);
+      if (dernier && dernier.length) {
+        $("nom").value = dernier[0].nom_prenoms;
+        $("filiere").value = dernier[0].filiere;
+      }
+    })();
+
+    // Date de fin proposée automatiquement : début + durée minimale du type de stage.
+    let finAuto = "";
+    function recalculerFin() {
+      const n = MOIS_MINIMUM[$("type").value];
+      const d = $("debut").value;
+      if (!n || !d) { $("fin").min = d || ""; return; }
+      const min = ajouterMois(d, n);
+      $("fin").min = min;
+      // On ne remplace pas une date de fin que la personne a choisie elle-même, sauf si elle est trop courte.
+      if (!$("fin").value || $("fin").value === finAuto || $("fin").value < min) {
+        $("fin").value = min;
+        finAuto = min;
+      }
+    }
+    $("debut").addEventListener("change", recalculerFin);
+    $("type").addEventListener("change", recalculerFin);
+    $("btn-compte").addEventListener("click", () => { location.href = "inscription.html"; });
+
+    $("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      dire("message", "");
+
+      if ($("site").value) { dire("message", "Enregistré.", "ok"); return; } // anti-robot
+
+      if ($("fin").value < $("debut").value) {
+        dire("message", "La date de fin ne peut pas être avant la date de début.", "erreur");
+        return;
+      }
+
+      const n = MOIS_MINIMUM[$("type").value];
+      if (!n) { dire("message", "Choisissez le type de stage.", "erreur"); return; }
+      if ($("fin").value < ajouterMois($("debut").value, n)) {
+        dire("message", n === 1 ? "Un stage académique dure au moins un mois." : "Un stage professionnel dure au moins trois mois.", "erreur");
+        return;
+      }
+
+      $("envoyer").disabled = true;
+      const { data, error } = await db.rpc("enregistrer_stage", {
+        p_nom: $("nom").value,
+        p_filiere: $("filiere").value,
+        p_type: $("type").value,
+        p_but: $("but").value,
+        p_debut: $("debut").value,
+        p_fin: $("fin").value
+      });
+      $("envoyer").disabled = false;
+
+      if (error) {
+        console.error(error);
+        dire("message", messageErreur(error), "erreur");
+        return;
+      }
+
+      if (connecte) {
+        location.href = "espace.html";
+        return;
+      }
+      localStorage.setItem("code_stage", data);
+      $("code").textContent = formaterCode(data);
+      $("vue-form").hidden = true;
+      $("vue-code").hidden = false;
+    });
+  </script>
+</body>
+</html>
