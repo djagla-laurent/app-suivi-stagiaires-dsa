@@ -13,6 +13,10 @@ function messageErreur(error) {
   const m = (error && error.message) || "";
   if (/DEJA_ENREGISTRE/.test(m)) return "Vous êtes déjà enregistré avec ces mêmes dates de début et de fin.";
   if (/STAGE_CHEVAUCHANT/.test(m)) return "Un stage est déjà enregistré sur une période qui chevauche celle-ci. Il n'est pas possible d'échelonner deux stages.";
+  if (/TYPE_INVALIDE/.test(m)) return "Le type de stage doit être « Académique » ou « Professionnel ».";
+  if (/DUREE_ACADEMIQUE/.test(m)) return "Un stage académique dure au moins un mois.";
+  if (/DUREE_PROFESSIONNEL/.test(m)) return "Un stage professionnel dure au moins trois mois.";
+  if (/RENOUVELLEMENT_EPUISE/.test(m)) return "Un stage professionnel n'est renouvelable qu'une seule fois : le maximum est déjà atteint.";
   if (/NOM_INVALIDE/.test(m)) return "Le nom saisi n'est pas valide.";
   if (/invalid login credentials/i.test(m)) return "Adresse e-mail ou mot de passe incorrect.";
   if (/already registered/i.test(m)) return "Un compte existe déjà avec cette adresse e-mail. Connectez-vous.";
@@ -54,4 +58,18 @@ function periodeParDefaut(liste) {
   const aVenir = liste.filter((s) => s.date_debut > t).sort((a, b) => (a.date_debut < b.date_debut ? -1 : 1));
   if (aVenir.length) return aVenir[0];
   return liste[0];
+}
+
+/* ---------- Types de stage et durées minimales ---------- */
+const MOIS_MINIMUM = { "Académique": 1, "Professionnel": 3 };
+
+// Ajoute n mois à une date AAAA-MM-JJ. Si le jour n'existe pas dans le mois d'arrivée,
+// on prend le dernier jour de ce mois (31/01 + 1 mois = 28/02), comme la base de données.
+function ajouterMois(iso, n) {
+  const [a, m, j] = iso.split("-").map(Number);
+  const total = (m - 1) + n;
+  const an = a + Math.floor(total / 12);
+  const mois = total % 12;
+  const dernier = new Date(Date.UTC(an, mois + 1, 0)).getUTCDate();
+  return an + "-" + String(mois + 1).padStart(2, "0") + "-" + String(Math.min(j, dernier)).padStart(2, "0");
 }
