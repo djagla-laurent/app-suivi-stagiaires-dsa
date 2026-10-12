@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Connexion à mon espace</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="theme.js"></script>
+</head>
+<body>
+  <main class="page narrow">
+    <h1>Mon espace stagiaire</h1>
+
+    <form id="form" class="card">
+      <label>Adresse e-mail
+        <input id="email" type="email" required autocomplete="username">
+      </label>
+      <label>Mot de passe
+        <input id="mdp" type="password" required autocomplete="current-password">
+      </label>
+      <button type="submit" id="envoyer" class="principal">Se connecter</button>
+      <p id="message" class="message" role="status"></p>
+    </form>
+
+    <p class="lien">Pas encore de compte ? <a href="inscription.html">M'inscrire</a> · <a href="index.html">Accueil</a></p>
+  </main>
+
+  <script src="supabase.min.js"></script>
+  <script src="config.js"></script>
+  <script src="commun.js"></script>
+  <script>
+    (async () => {
+      const { data } = await db.auth.getSession();
+      if (data.session) { location.replace("espace.html"); return; }
+      if (new URLSearchParams(location.search).get("cree") === "1") {
+        dire("message", "Votre compte a été créé. Connectez-vous pour accéder à votre espace.", "ok");
+      }
+    })();
+
+    $("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      dire("message", "");
+      $("envoyer").disabled = true;
+      const { error } = await db.auth.signInWithPassword({
+        email: $("email").value.trim(),
+        password: $("mdp").value
+      });
+      $("envoyer").disabled = false;
+      if (error) {
+        console.error(error);
+        dire("message", messageErreur(error), "erreur");
+        return;
+      }
+      location.href = "espace.html";
+    });
+  </script>
+</body>
+</html>
