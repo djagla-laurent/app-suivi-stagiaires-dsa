@@ -58,18 +58,35 @@ as $$
   ), ' '), '');
 $$;
 
--- 4. Contrôles à chaque enregistrement : doublon exact et chevauchement
+-- 4. Contrôles à chaque enregistrement : type, durée minimale, doublon, chevauchement, renouvellement
+--    Académique : au moins 1 mois. Professionnel : au moins 3 mois, renouvelable une seule fois (2 stages au maximum).
 create or replace function public.verifier_stage()
 returns trigger
 language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_nb integer;
 begin
   new.cle_identite := public.cle_identite(new.nom_prenoms);
 
   if new.cle_identite = '' then
     raise exception 'NOM_INVALIDE';
+  end if;
+
+  if new.type_stage not in ('Académique', 'Professionnel') then
+    raise exception 'TYPE_INVALIDE';
+  end if;
+
+  -- Durée minimale (fin >= début + 1 mois ou + 3 mois ; le 31/01 + 1 mois donne le 28/02).
+  if new.type_stage = 'Académique'
+     and new.date_fin < (new.date_debut + interval '1 month')::date then
+    raise exception 'DUREE_ACADEMIQUE';
+  end if;
+  if new.type_stage = 'Professionnel'
+     and new.date_fin < (new.date_debut + interval '3 months')::date then
+    raise exception 'DUREE_PROFESSIONNEL';
   end if;
 
   perform pg_advisory_xact_lock(hashtext(new.cle_identite));
@@ -96,6 +113,19 @@ begin
       and s.date_fin >= new.date_debut
   ) then
     raise exception 'STAGE_CHEVAUCHANT';
+  end if;
+
+  -- Stage professionnel : renouvelable une seule fois, donc deux stages professionnels au maximum.
+  if new.type_stage = 'Professionnel' then
+    select count(*) into v_nb
+    from public.stages s
+    where s.id <> new.id
+      and s.type_stage = 'Professionnel'
+      and (s.cle_identite = new.cle_identite
+           or (new.user_id is not null and s.user_id = new.user_id));
+    if v_nb >= 2 then
+      raise exception 'RENOUVELLEMENT_EPUISE';
+    end if;
   end if;
 
   return new;
