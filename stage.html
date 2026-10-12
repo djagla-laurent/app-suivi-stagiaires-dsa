@@ -123,7 +123,7 @@
       if ($("site").value) { dire("message", "Enregistré.", "ok"); return; } // anti-robot
 
       if ($("fin").value < $("debut").value) {
-        dire("message", "La date de fin ne peut pas être avant la date de début.", "erreur");
+        dire("message", "La date de fin ne peut pas être antérieure à la date de début.", "erreur");
         return;
       }
 
