@@ -81,7 +81,7 @@
 
     // Message immédiat si la date de fin est antérieure à la date de début.
     // (Pas d'attribut "min" sur la date de fin : le navigateur bloquerait l'envoi avec son propre message.)
-    const messageDates = "La date de fin ne peut pas être avant la date de début.";
+    const messageDates = "La date de fin ne peut pas être antérieure à la date de début.";
     function verifierDates() {
       const mauvais = $("debut").value && $("fin").value && $("fin").value < $("debut").value;
       if (mauvais) dire("message", messageDates, "erreur");
