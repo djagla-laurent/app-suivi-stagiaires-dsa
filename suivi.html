@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mouvements et bilans</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+
+    <!-- Connexion -->
+    <section id="vue-connexion" style="max-width:420px;margin:40px auto;">
+      <h1>Mouvements et bilans</h1>
+      <form id="form-connexion" class="card">
+        <label>Adresse e-mail
+          <input id="email" type="email" required autocomplete="username">
+        </label>
+        <label>Mot de passe
+          <input id="mdp" type="password" required autocomplete="current-password">
+        </label>
+        <button type="submit" id="btn-connexion" class="principal">Se connecter</button>
+        <p id="msg-connexion" class="message" role="status"></p>
+      </form>
+      <p class="lien"><a href="index.html">Retour à l'accueil</a></p>
+    </section>
+
+    <!-- Tableau de bord -->
+    <section id="vue-admin" hidden>
+      <div class="entete">
+        <h1>Mouvements et bilans</h1>
+        <div>
+          <a href="admin.html" style="margin-right:12px;">Stages</a>
+          <a href="index.html" style="margin-right:12px;">Accueil</a>
+          <button id="btn-deconnexion">Se déconnecter</button>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-bottom:16px;">
+        <button id="tab-demandes" class="principal">Demandes de mouvement</button>
+        <button id="tab-semaine">Bilan de la semaine</button>
+      </div>
+      <p id="msg-admin" class="message" role="status"></p>
+
+      <!-- Onglet 1 : demandes -->
+      <section id="onglet-demandes">
+        <div class="outils">
+          <label>Afficher
+            <select id="filtre-statut">
+              <option value="en_attente">Demandes en attente</option>
+              <option value="retard">Retours en retard</option>
+              <option value="approuve">Approuvées</option>
+              <option value="refuse">Refusées</option>
+              <option value="tous">Toutes</option>
+            </select>
+          </label>
+          <label>Recherche
+            <input id="recherche" type="search" placeholder="Nom, motif, destination">
+          </label>
+          <button id="btn-actualiser">Actualiser</button>
+        </div>
+        <p id="compteur" class="compteur"></p>
+        <div class="tableau large">
+          <table>
+            <thead>
+              <tr><th>Stagiaire</th><th>Type</th><th>Période</th><th>Détails</th><th>Statut</th><th>Commentaire</th><th></th></tr>
+            </thead>
+            <tbody id="corps-demandes"></tbody>
+          </table>
+          <p id="vide-demandes" class="vide" hidden>Aucune demande ne correspond à ce filtre.</p>
+        </div>
+      </section>
+
+      <!-- Onglet 2 : bilan de la semaine -->
+      <section id="onglet-semaine" hidden>
+        <div class="outils">
+          <button id="sem-prec" aria-label="Semaine précédente">&larr;</button>
+          <label>Semaine contenant le
+            <input id="sem-date" type="date">
+          </label>
+          <button id="sem-suiv" aria-label="Semaine suivante">&rarr;</button>
+          <strong id="sem-libelle" style="align-self:center;"></strong>
+          <button id="btn-export" class="principal">Exporter vers Excel (CSV)</button>
+        </div>
+        <div class="tableau large">
+          <table>
+            <thead>
+              <tr><th>Stagiaire</th><th>Sorties, week-ends, missions</th><th>Absences, retards</th><th>Bilan</th><th></th></tr>
+            </thead>
+            <tbody id="corps-semaine"></tbody>
+          </table>
+          <p id="vide-semaine" class="vide" hidden>Aucun stagiaire concerné cette semaine.</p>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <!-- Décision sur une demande -->
+  <dialog id="dlg-decision">
+    <h2 id="dec-titre"></h2>
+    <label>Commentaire (facultatif)
+      <textarea id="dec-commentaire" rows="3" maxlength="500"></textarea>
+    </label>
+    <div class="boutons">
+      <button type="button" id="dec-annuler">Annuler</button>
+      <button type="button" id="dec-valider" class="principal">Confirmer</button>
+    </div>
+  </dialog>
+
+  <!-- Détail d'une semaine pour un stagiaire -->
+  <dialog id="dlg-bilan" style="width:min(640px,94vw);">
+    <h2 id="bil-titre"></h2>
+    <div id="bil-contenu" style="max-height:50vh;overflow-y:auto;margin-bottom:12px;"></div>
+    <label>Commentaire pour le stagiaire
+      <textarea id="bil-commentaire" rows="3" maxlength="1000"></textarea>
+    </label>
+    <p id="bil-message" class="message" role="status"></p>
+    <div class="boutons">
+      <button type="button" id="bil-fermer">Fermer</button>
+      <button type="button" id="bil-corriger">Demander une correction</button>
+      <button type="button" id="bil-viser" class="principal">Viser le bilan</button>
+    </div>
+  </dialog>
+
+  <script src="supabase.min.js"></script>
+  <script src="config.js"></script>
+  <script src="commun.js"></script>
+  <script>
+    let stages = [], mouvements = [], bilans = [], noms = {};
+    let lundi = lundiDe(aujourdhui());
+    let decision = null;   // { id, statut }
+    let bilanOuvert = null; // bilan en cours d'examen
+
+    const nomDe = (id) => noms[id] || "Compte sans stage (" + id.slice(0, 8) + ")";
+    const chevauche = (m, debut, fin) => m.date_debut <= fin && m.date_fin >= debut;
+
+    function ajouterLigne(parent, texte, style) {
+      const d = document.createElement("div");
+      d.textContent = texte;
+      if (style) d.style.cssText = style;
+      parent.appendChild(d);
+      return d;
+    }
+    function cellule(tr, lignes, classe) {
+      const td = document.createElement("td");
+      if (classe) td.className = classe;
+      (Array.isArray(lignes) ? lignes : [lignes]).forEach((l) => ajouterLigne(td, l));
+      tr.appendChild(td);
+      return td;
+    }
+    function bouton(texte, classe, action) {
+      const b = document.createElement("button");
+      b.textContent = texte;
+      if (classe) b.className = classe;
+      b.addEventListener("click", action);
+      return b;
+    }
+
+    /* ---------- Connexion ---------- */
+    async function afficherSelonSession() {
+      const { data } = await db.auth.getSession();
+      let connecte = !!data.session;
+      if (connecte) {
+        const { data: estAdmin } = await db.rpc("est_admin");
+        if (estAdmin !== true) {
+          await db.auth.signOut();
+          connecte = false;
+          dire("msg-connexion", "Ce compte n'a pas accès à cet espace.", "erreur");
+        }
+      }
+      $("vue-connexion").hidden = connecte;
+      $("vue-admin").hidden = !connecte;
+      if (connecte) charger();
+    }
+
+    $("form-connexion").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      $("btn-connexion").disabled = true;
+      dire("msg-connexion", "");
+      const { error } = await db.auth.signInWithPassword({
+        email: $("email").value.trim(),
+        password: $("mdp").value
+      });
+      $("btn-connexion").disabled = false;
+      if (error) { console.error(error); dire("msg-connexion", messageErreur(error), "erreur"); return; }
+      $("mdp").value = "";
+      afficherSelonSession();
+    });
+
+    $("btn-deconnexion").addEventListener("click", async () => {
+      await db.auth.signOut();
+      afficherSelonSession();
+    });
+
+    /* ---------- Onglets ---------- */
+    function onglet(nom) {
+      const demandes = nom === "demandes";
+      $("onglet-demandes").hidden = !demandes;
+      $("onglet-semaine").hidden = demandes;
+      $("tab-demandes").className = demandes ? "principal" : "";
+      $("tab-semaine").className = demandes ? "" : "principal";
+    }
+    $("tab-demandes").addEventListener("click", () => onglet("demandes"));
+    $("tab-semaine").addEventListener("click", () => onglet("semaine"));
+
+    /* ---------- Chargement ---------- */
+    async function charger() {
+      dire("msg-admin", "");
+      const [s, m] = await Promise.all([
+        db.from("stages").select("user_id, nom_prenoms, date_debut, date_fin").order("date_debut", { ascending: false }),
+        db.from("mouvements").select("*").order("created_at", { ascending: false })
+      ]);
+      if (s.error || m.error) {
+        console.error(s.error || m.error);
+        dire("msg-admin", "Impossible de charger les données.", "erreur");
+        return;
+      }
+      stages = s.data;
+      mouvements = m.data;
+      noms = {};
+      stages.forEach((x) => { if (x.user_id && !noms[x.user_id]) noms[x.user_id] = x.nom_prenoms; });
+      afficherDemandes();
+      await chargerBilans();
+    }
+
+    async function chargerBilans() {
+      const { data, error } = await db.from("bilans").select("*").eq("semaine_debut", lundi);
+      if (error) { console.error(error); dire("msg-admin", "Impossible de charger les bilans.", "erreur"); return; }
+      bilans = data;
+      afficherSemaine();
+    }
+
+    /* ---------- Onglet 1 : demandes ---------- */
+    function demandesFiltrees() {
+      const f = $("filtre-statut").value;
+      const q = $("recherche").value.trim().toLowerCase();
+      return mouvements.filter((m) => {
+        if (f === "retard" ? !retourEnRetard(m) : f !== "tous" && m.statut !== f) return false;
+        return !q || (nomDe(m.user_id) + " " + m.motif + " " + m.destination).toLowerCase().includes(q);
+      });
+    }
+
+    function afficherDemandes() {
+      const lignes = demandesFiltrees();
+      const corps = $("corps-demandes");
+      corps.replaceChildren();
+
+      lignes.forEach((m) => {
+        const tr = document.createElement("tr");
+        cellule(tr, nomDe(m.user_id));
+        cellule(tr, TYPES_MOUVEMENT[m.type]);
+        cellule(tr, periodeMouvement(m));
+
+        const details = [m.motif];
+        if (m.destination) details.push("Destination : " + m.destination);
+        if (m.contact) details.push("Contact : " + m.contact);
+        cellule(tr, details, "long");
+
+        const etat = [STATUTS_MOUVEMENT[m.statut]];
+        if (m.statut === "approuve" && AVEC_RETOUR.includes(m.type)) {
+          etat.push(m.retour_confirme_le ? "Retour confirmé" : "Retour attendu");
+        }
+        const tdEtat = cellule(tr, etat);
+        if (retourEnRetard(m)) ajouterLigne(tdEtat, "Retour en retard", "color:var(--erreur);font-weight:700;");
+        cellule(tr, m.commentaire_admin || "—", "long");
+
+        const td = document.createElement("td");
+        td.className = "actions";
+        if (m.statut === "en_attente") {
+          td.append(
+            bouton("Approuver", "principal", () => ouvrirDecision(m, "approuve")),
+            bouton("Refuser", "danger", () => ouvrirDecision(m, "refuse"))
+          );
+        }
+        if (m.statut === "approuve" && AVEC_RETOUR.includes(m.type) && !m.retour_confirme_le) {
+          td.appendChild(bouton("Confirmer le retour", "", () => confirmerRetour(m)));
+        }
+        td.appendChild(bouton("Supprimer", "danger", () => supprimer(m)));
+        tr.appendChild(td);
+        corps.appendChild(tr);
+      });
+
+      $("vide-demandes").hidden = lignes.length > 0;
+      const attente = mouvements.filter((m) => m.statut === "en_attente").length;
+      const retards = mouvements.filter(retourEnRetard).length;
+      $("compteur").textContent = lignes.length + " affichée(s) · " + attente + " en attente · " + retards + " retour(s) en retard";
+    }
+
+    ["filtre-statut", "recherche"].forEach((id) => $(id).addEventListener("input", afficherDemandes));
+    $("btn-actualiser").addEventListener("click", charger);
+
+    function ouvrirDecision(m, statut) {
+      decision = { id: m.id, statut };
+      $("dec-titre").textContent = (statut === "approuve" ? "Approuver" : "Refuser") + " : " + nomDe(m.user_id);
+      $("dec-commentaire").value = "";
+      $("dlg-decision").showModal();
+    }
+    $("dec-annuler").addEventListener("click", () => $("dlg-decision").close());
+    $("dec-valider").addEventListener("click", async () => {
+      const { error } = await db.from("mouvements")
+        .update({ statut: decision.statut, commentaire_admin: $("dec-commentaire").value.trim() || null })
+        .eq("id", decision.id);
+      $("dlg-decision").close();
+      if (error) { console.error(error); dire("msg-admin", "La décision n'a pas pu être enregistrée.", "erreur"); return; }
+      dire("msg-admin", "Décision enregistrée.", "ok");
+      charger();
+    });
+
+    async function confirmerRetour(m) {
+      const { error } = await db.from("mouvements").update({ retour_confirme_le: new Date().toISOString() }).eq("id", m.id);
+      if (error) { console.error(error); dire("msg-admin", "La confirmation a échoué.", "erreur"); return; }
+      dire("msg-admin", "Retour confirmé.", "ok");
+      charger();
+    }
+
+    async function supprimer(m) {
+      if (!confirm("Supprimer cette déclaration de " + nomDe(m.user_id) + " ?")) return;
+      const { error } = await db.from("mouvements").delete().eq("id", m.id);
+      if (error) { console.error(error); dire("msg-admin", "La suppression a échoué.", "erreur"); return; }
+      dire("msg-admin", "Déclaration supprimée.", "ok");
+      charger();
+    }
+
+    /* ---------- Onglet 2 : bilan de la semaine ---------- */
+    function lignesSemaine() {
+      const fin = ajouterJours(lundi, 6);
+      const ids = new Set();
+      stages.forEach((s) => { if (s.user_id && s.date_debut <= fin && s.date_fin >= lundi) ids.add(s.user_id); });
+      mouvements.forEach((m) => { if (chevauche(m, lundi, fin)) ids.add(m.user_id); });
+      bilans.forEach((b) => ids.add(b.user_id));
+
+      return [...ids].map((id) => {
+        const mv = mouvements.filter((m) => m.user_id === id && chevauche(m, lundi, fin));
+        return {
+          id,
+          nom: nomDe(id),
+          sorties: mv.filter((m) => AVEC_RETOUR.includes(m.type)),
+          absences: mv.filter((m) => !AVEC_RETOUR.includes(m.type)),
+          bilan: bilans.find((b) => b.user_id === id) || null
+        };
+      }).sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
+    }
+
+    const texteMouvement = (m) =>
+      TYPES_MOUVEMENT[m.type] + " : " + enMinuscule(periodeMouvement(m)) + " (" + STATUTS_MOUVEMENT[m.statut].toLowerCase() + ")" +
+      (retourEnRetard(m) ? " : retour en retard" : "");
+
+    function afficherSemaine() {
+      $("sem-date").value = lundi;
+      $("sem-libelle").textContent = "Semaine du " + periodeSemaine(lundi);
+      const lignes = lignesSemaine();
+      const corps = $("corps-semaine");
+      corps.replaceChildren();
+
+      lignes.forEach((l) => {
+        const tr = document.createElement("tr");
+        cellule(tr, l.nom);
+        cellule(tr, l.sorties.length ? l.sorties.map(texteMouvement) : ["Aucune"], "long");
+        cellule(tr, l.absences.length ? l.absences.map(texteMouvement) : ["Aucune"], "long");
+        const td = cellule(tr, l.bilan ? STATUTS_BILAN[l.bilan.statut] : "Manquant");
+        if (!l.bilan) td.style.color = "var(--erreur)";
+        const action = document.createElement("td");
+        action.appendChild(bouton("Voir", "", () => ouvrirBilan(l)));
+        tr.appendChild(action);
+        corps.appendChild(tr);
+      });
+      $("vide-semaine").hidden = lignes.length > 0;
+    }
+
+    function changerSemaine(nouveauLundi) {
+      lundi = nouveauLundi;
+      chargerBilans();
+    }
+    $("sem-prec").addEventListener("click", () => changerSemaine(ajouterJours(lundi, -7)));
+    $("sem-suiv").addEventListener("click", () => changerSemaine(ajouterJours(lundi, 7)));
+    $("sem-date").addEventListener("change", () => { if ($("sem-date").value) changerSemaine(lundiDe($("sem-date").value)); });
+
+    function bloc(parent, titre, texte) {
+      const h = document.createElement("h3");
+      h.textContent = titre;
+      h.style.cssText = "font-size:0.95rem;margin:14px 0 4px;color:var(--discret);";
+      const p = document.createElement("p");
+      p.textContent = texte || "—";
+      p.style.cssText = "margin:0;white-space:pre-wrap;";
+      parent.append(h, p);
+    }
+
+    function ouvrirBilan(l) {
+      bilanOuvert = l.bilan;
+      $("bil-titre").textContent = l.nom + " : semaine du " + periodeSemaine(lundi);
+      const zone = $("bil-contenu");
+      zone.replaceChildren();
+      bloc(zone, "Sorties, week-ends, missions", l.sorties.map(texteMouvement).join("\n"));
+      bloc(zone, "Absences, retards", l.absences.map(texteMouvement).join("\n"));
+      if (l.bilan) {
+        bloc(zone, "Statut du bilan", STATUTS_BILAN[l.bilan.statut]);
+        bloc(zone, "Activités réalisées", l.bilan.activites);
+        bloc(zone, "Compétences ou connaissances acquises", l.bilan.acquis);
+        bloc(zone, "Difficultés rencontrées", l.bilan.difficultes);
+        bloc(zone, "Objectifs de la semaine suivante", l.bilan.objectifs);
+        bloc(zone, "Service ou encadreur", l.bilan.encadreur);
+      } else {
+        bloc(zone, "Bilan", "Aucun bilan rédigé pour cette semaine.");
+      }
+      $("bil-commentaire").value = l.bilan && l.bilan.commentaire_admin ? l.bilan.commentaire_admin : "";
+      const exploitable = !!l.bilan && l.bilan.statut !== "brouillon";
+      $("bil-viser").disabled = !exploitable;
+      $("bil-corriger").disabled = !exploitable;
+      dire("bil-message", "");
+      $("dlg-bilan").showModal();
+    }
+    $("bil-fermer").addEventListener("click", () => $("dlg-bilan").close());
+
+    async function trancher(statut) {
+      const commentaire = $("bil-commentaire").value.trim();
+      if (statut === "a_corriger" && !commentaire) {
+        dire("bil-message", "Indiquez ce qui doit être corrigé.", "erreur");
+        return;
+      }
+      const { error } = await db.from("bilans")
+        .update({ statut, commentaire_admin: commentaire || null })
+        .eq("id", bilanOuvert.id);
+      if (error) { console.error(error); dire("bil-message", messageErreur(error), "erreur"); return; }
+      $("dlg-bilan").close();
+      dire("msg-admin", statut === "vise" ? "Bilan visé." : "Correction demandée.", "ok");
+      chargerBilans();
+    }
+    $("bil-viser").addEventListener("click", () => trancher("vise"));
+    $("bil-corriger").addEventListener("click", () => trancher("a_corriger"));
+
+    /* ---------- Export CSV ---------- */
+    function csv(v) {
+      let t = String(v ?? "");
+      if (/^[=+\-@\t\r]/.test(t)) t = "'" + t;
+      return '"' + t.replace(/"/g, '""') + '"';
+    }
+
+    $("btn-export").addEventListener("click", () => {
+      const entete = ["Stagiaire", "Semaine", "Sorties, week-ends, missions", "Absences, retards", "Statut du bilan",
+        "Activités réalisées", "Compétences acquises", "Difficultés", "Objectifs suivants", "Service ou encadreur", "Commentaire"];
+      const rows = lignesSemaine().map((l) => {
+        const b = l.bilan;
+        return [
+          l.nom, periodeSemaine(lundi),
+          l.sorties.map(texteMouvement).join(" ; "), l.absences.map(texteMouvement).join(" ; "),
+          b ? STATUTS_BILAN[b.statut] : "Manquant",
+          b ? b.activites : "", b ? b.acquis : "", b ? b.difficultes : "", b ? b.objectifs : "",
+          b ? b.encadreur : "", b ? b.commentaire_admin : ""
+        ].map(csv).join(";");
+      });
+      const contenu = "\ufeff" + [entete.map(csv).join(";"), ...rows].join("\r\n");
+      const blob = new Blob([contenu], { type: "text/csv;charset=utf-8" });
+      const lien = document.createElement("a");
+      lien.href = URL.createObjectURL(blob);
+      lien.download = "bilan_semaine_" + lundi + ".csv";
+      lien.click();
+      URL.revokeObjectURL(lien.href);
+    });
+
+    setInterval(() => {
+      if (!$("vue-admin").hidden && !$("dlg-decision").open && !$("dlg-bilan").open) charger();
+    }, 60000);
+    afficherSelonSession();
+  </script>
+</body>
+</html>
