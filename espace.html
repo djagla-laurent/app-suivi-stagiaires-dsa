@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mon espace stagiaire</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="theme.js"></script>
+</head>
+<body>
+  <main class="page narrow">
+    <div class="barre">
+      <h1>Mon espace</h1>
+      <button id="btn-deconnexion">Se déconnecter</button>
+    </div>
+
+    <section id="vue-stage" hidden>
+      <div class="card carte-etat">
+        <p id="etat" class="etat"></p>
+      </div>
+      <label id="bloc-periode" style="margin-top:16px;" hidden>Choisir une période de stage
+        <select id="periode"></select>
+      </label>
+    </section>
+
+    <section id="vue-vide" class="card" hidden>
+      <p>Aucun stage n'est rattaché à votre compte pour le moment.</p>
+    </section>
+
+    <p id="alerte-bilan" class="note-alerte" hidden></p>
+    <div class="actions-espace">
+      <button id="btn-bilan" class="principal">Mon bilan de la semaine</button>
+      <button id="btn-mouvements">Mes mouvements</button>
+      <button id="btn-nouveau">Déclarer un nouveau stage</button>
+    </div>
+
+    <details>
+      <summary>J'ai un code de rattachement</summary>
+      <div class="card" style="margin-top:10px;">
+        <label>Code de rattachement
+          <input id="code" maxlength="20" placeholder="XXXXX-XXXXX" autocapitalize="characters">
+        </label>
+        <button id="btn-code">Rattacher ce stage à mon compte</button>
+        <p id="msg-code" class="message" role="status"></p>
+      </div>
+    </details>
+  </main>
+
+  <script src="supabase.min.js"></script>
+  <script src="config.js"></script>
+  <script src="commun.js"></script>
+  <script>
+    let uid = null;
+    let stages = [];
+
+    async function demarrer() {
+      const { data } = await db.auth.getSession();
+      if (!data.session) { location.replace("connexion.html"); return; }
+      uid = data.session.user.id;
+
+      // Rattachement différé (si la confirmation par e-mail était exigée à l'inscription)
+      const attente = localStorage.getItem("code_en_attente");
+      if (attente) {
+        await db.rpc("rattacher_stage", { p_code: attente });
+        localStorage.removeItem("code_en_attente");
+      }
+      charger();
+    }
+
+    async function charger() {
+      const { data, error } = await db.from("stages")
+        .select("*")
+        .eq("user_id", uid)
+        .order("date_debut", { ascending: false });
+      if (error) {
+        console.error(error);
+        $("vue-vide").hidden = false;
+        $("vue-vide").textContent = "Impossible de charger vos informations. Réessayez plus tard.";
+        return;
+      }
+      stages = data;
+      const present = stages.length > 0;
+      $("vue-stage").hidden = !present;
+      $("vue-vide").hidden = present;
+      if (!present) return;
+
+      const select = $("periode");
+      select.replaceChildren();
+      stages.forEach((s) => {
+        const o = document.createElement("option");
+        o.value = s.id;
+        o.textContent = dateFr(s.date_debut) + " - " + dateFr(s.date_fin);
+        select.appendChild(o);
+      });
+      select.value = periodeParDefaut(stages).id;
+      $("bloc-periode").hidden = stages.length < 2;
+      afficher();
+      verifierBilan();
+    }
+
+    function afficher() {
+      const s = stages.find((x) => x.id === $("periode").value);
+      if (s) $("etat").textContent = messageStage(s);
+    }
+
+    $("periode").addEventListener("change", afficher);
+    $("btn-nouveau").addEventListener("click", () => { location.href = "stage.html"; });
+    $("btn-bilan").addEventListener("click", () => { location.href = "bilan.html"; });
+    $("btn-mouvements").addEventListener("click", () => { location.href = "mouvements.html"; });
+
+    async function verifierBilan() {
+      const { data } = await db.from("bilans")
+        .select("semaine_debut, statut")
+        .eq("user_id", uid)
+        .order("semaine_debut", { ascending: false })
+        .limit(30);
+      if (!data) return;
+      const aCorriger = data.find((x) => x.statut === "a_corriger");
+      const courant = data.find((x) => x.semaine_debut === lundiDe(aujourdhui()));
+      let texte = "";
+      if (aCorriger) texte = "Un bilan est à corriger : semaine du " + dateFr(aCorriger.semaine_debut) + ".";
+      else if (!courant) texte = "Le bilan de la semaine en cours n'est pas encore rédigé.";
+      else if (courant.statut === "brouillon") texte = "Le bilan de la semaine en cours est en brouillon : pensez à le soumettre.";
+      $("alerte-bilan").textContent = texte;
+      $("alerte-bilan").hidden = !texte;
+    }
+
+    $("btn-code").addEventListener("click", async () => {
+      dire("msg-code", "");
+      const { data, error } = await db.rpc("rattacher_stage", { p_code: $("code").value });
+      if (error) { dire("msg-code", messageErreur(error), "erreur"); return; }
+      if (data !== true) { dire("msg-code", "Code introuvable ou déjà utilisé.", "erreur"); return; }
+      $("code").value = "";
+      dire("msg-code", "Stage rattaché à votre compte.", "ok");
+      charger();
+    });
+
+    $("btn-deconnexion").addEventListener("click", async () => {
+      await db.auth.signOut();
+      location.href = "index.html";
+    });
+
+    demarrer();
+  </script>
+</body>
+</html>

@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mes mouvements</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="theme.js"></script>
+</head>
+<body>
+  <main class="page narrow">
+    <div class="barre">
+      <h1>Mes mouvements</h1>
+      <a href="espace.html">Retour à mon espace</a>
+    </div>
+
+    <form id="form" class="card" autocomplete="off">
+      <h2>Nouvelle déclaration</h2>
+      <label>Type
+        <select id="type" required>
+          <option value="sortie">Sortie / permission</option>
+          <option value="absence">Absence</option>
+          <option value="retard">Retard</option>
+        </select>
+      </label>
+      <div class="ligne">
+        <label>Date de début
+          <input id="debut" type="date" required>
+        </label>
+        <label>Date de fin
+          <input id="fin" type="date" required>
+        </label>
+      </div>
+      <div id="bloc-retour">
+        <div class="ligne">
+          <label>Heure de départ
+            <input id="h-depart" type="time">
+          </label>
+          <label>Retour prévu à
+            <input id="h-retour" type="time">
+          </label>
+        </div>
+        <label>Personne ou numéro à contacter
+          <input id="contact" maxlength="200">
+        </label>
+      </div>
+      <label><span id="lbl-motif">Motif</span>
+        <textarea id="motif" rows="3" required maxlength="500"></textarea>
+      </label>
+      <button type="submit" id="envoyer" class="principal">Envoyer la demande</button>
+      <p id="message" class="message" role="status"></p>
+    </form>
+
+    <h2 style="margin-top:28px;">Mes déclarations</h2>
+    <div id="liste" class="liste-cartes"></div>
+    <p id="vide" class="compteur" hidden>Aucune déclaration pour le moment.</p>
+    <p id="msg-liste" class="message" role="status"></p>
+  </main>
+
+  <script src="supabase.min.js"></script>
+  <script src="config.js"></script>
+  <script src="commun.js"></script>
+  <script>
+    let uid = null;
+
+    function el(tag, texte, style) {
+      const e = document.createElement(tag);
+      if (texte) e.textContent = texte;
+      if (style) e.style.cssText = style;
+      return e;
+    }
+
+    async function demarrer() {
+      const { data } = await db.auth.getSession();
+      if (!data.session) { location.replace("connexion.html"); return; }
+      uid = data.session.user.id;
+      $("debut").value = $("fin").value = aujourdhui();
+      adapterType();
+      charger();
+    }
+
+    const MOTIFS = {
+      sortie: ["Motif de la sortie", "Pourquoi sortez-vous ? (démarche, rendez-vous, raison familiale…)"],
+      absence: ["Motif de l'absence", "Expliquez la raison de votre absence."],
+      retard: ["Motif du retard", "Expliquez la raison de votre retard."]
+    };
+
+    function adapterType() {
+      const type = $("type").value;
+      const avecRetour = AVEC_RETOUR.includes(type);
+      $("bloc-retour").hidden = !avecRetour;
+      $("contact").required = avecRetour;
+      const m = MOTIFS[type] || ["Motif", ""];
+      $("lbl-motif").textContent = m[0];
+      $("motif").placeholder = m[1];
+    }
+    $("type").addEventListener("change", adapterType);
+    $("debut").addEventListener("change", () => {
+      $("fin").min = $("debut").value;
+      if ($("fin").value < $("debut").value) $("fin").value = $("debut").value;
+    });
+
+    $("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      dire("message", "");
+      if ($("fin").value < $("debut").value) {
+        dire("message", "La date de fin ne peut pas être avant la date de début.", "erreur");
+        return;
+      }
+      const avecRetour = AVEC_RETOUR.includes($("type").value);
+      $("envoyer").disabled = true;
+      const { error } = await db.from("mouvements").insert({
+        user_id: uid,
+        type: $("type").value,
+        date_debut: $("debut").value,
+        date_fin: $("fin").value,
+        heure_depart: avecRetour && $("h-depart").value ? $("h-depart").value : null,
+        heure_retour: avecRetour && $("h-retour").value ? $("h-retour").value : null,
+        motif: $("motif").value.trim(),
+        contact: avecRetour ? $("contact").value.trim() : ""
+      });
+      $("envoyer").disabled = false;
+      if (error) {
+        console.error(error);
+        dire("message", messageErreur(error), "erreur");
+        return;
+      }
+      dire("message", "Demande envoyée. Elle sera examinée par l'administration.", "ok");
+      $("form").reset();
+      $("debut").value = $("fin").value = aujourdhui();
+      adapterType();
+      charger();
+    });
+
+    async function charger() {
+      const { data, error } = await db.from("mouvements")
+        .select("*")
+        .eq("user_id", uid)
+        .order("date_debut", { ascending: false });
+      if (error) {
+        console.error(error);
+        dire("msg-liste", "Impossible de charger vos déclarations.", "erreur");
+        return;
+      }
+      const liste = $("liste");
+      liste.replaceChildren();
+      $("vide").hidden = data.length > 0;
+
+      data.forEach((m) => {
+        const carte = el("div");
+        carte.className = "card";
+
+        const tete = el("div");
+        tete.className = "mouv-tete";
+        tete.append(el("strong", TYPES_MOUVEMENT[m.type]), pastille(STATUTS_MOUVEMENT[m.statut], TON_MOUVEMENT[m.statut]));
+        carte.appendChild(tete);
+
+        const periode = el("div", periodeMouvement(m));
+        periode.className = "mouv-periode";
+        carte.appendChild(periode);
+
+        const motif = el("p", m.motif);
+        motif.className = "mouv-motif";
+        carte.appendChild(motif);
+
+        // Anciennes demandes : la destination, si elle avait été renseignée, reste visible.
+        if (m.destination) { const d = el("div", "Destination : " + m.destination); d.className = "mouv-detail"; carte.appendChild(d); }
+        if (m.contact) { const c = el("div", "Contact : " + m.contact); c.className = "mouv-detail"; carte.appendChild(c); }
+
+        if (m.statut === "approuve" && AVEC_RETOUR.includes(m.type)) {
+          const etats = el("div");
+          etats.className = "mouv-etats";
+          etats.appendChild(pastille(m.retour_confirme_le ? "Retour confirmé" : "Retour à confirmer", m.retour_confirme_le ? "ok" : "attente"));
+          if (retourEnRetard(m)) etats.appendChild(pastille("Retour en retard", "ko"));
+          carte.appendChild(etats);
+        }
+
+        if (m.commentaire_admin) {
+          const n = el("div", "Commentaire de l'administration : " + m.commentaire_admin);
+          n.className = "note";
+          carte.appendChild(n);
+        }
+
+        const actions = el("div");
+        actions.className = "mouv-actions";
+        if (m.statut === "en_attente") {
+          const b = el("button", "Annuler la demande");
+          b.className = "danger";
+          b.addEventListener("click", () => annuler(m));
+          actions.appendChild(b);
+        }
+        if (m.statut === "approuve" && AVEC_RETOUR.includes(m.type) && !m.retour_confirme_le) {
+          const b = el("button", "Confirmer mon retour");
+          b.className = "principal";
+          b.addEventListener("click", () => confirmerRetour(m));
+          actions.appendChild(b);
+        }
+        if (actions.children.length) carte.appendChild(actions);
+        liste.appendChild(carte);
+      });
+    }
+
+    async function annuler(m) {
+      if (!confirm("Annuler cette demande ?")) return;
+      const { error } = await db.from("mouvements").delete().eq("id", m.id);
+      if (error) { console.error(error); dire("msg-liste", "L'annulation a échoué.", "erreur"); return; }
+      dire("msg-liste", "Demande annulée.", "ok");
+      charger();
+    }
+
+    async function confirmerRetour(m) {
+      const { data, error } = await db.rpc("confirmer_retour", { p_id: m.id });
+      if (error || data !== true) {
+        console.error(error);
+        dire("msg-liste", "Le retour n'a pas pu être confirmé.", "erreur");
+        return;
+      }
+      dire("msg-liste", "Retour confirmé. Merci.", "ok");
+      charger();
+    }
+
+    demarrer();
+  </script>
+</body>
+</html>
