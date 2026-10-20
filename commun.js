@@ -17,6 +17,8 @@ function messageErreur(error) {
   if (/UNIVERSITE_INVALIDE/.test(m)) return "L'université d'étude est obligatoire.";
   if (/ACTION_INTERDITE/.test(m)) return "Cette action n'est pas autorisée dans l'état actuel.";
   if (/SEMAINE_FUTURE/.test(m)) return "Vous ne pouvez pas rédiger le bilan d'une semaine à venir.";
+  if (/SEMAINE_HORS_STAGE/.test(m)) return "Cette semaine est en dehors de la période de votre stage.";
+  if (/HORS_PERIODE_STAGE/.test(m)) return "Les dates doivent se situer dans la période de votre stage.";
   if (/duplicate key/i.test(m)) return "Cet enregistrement existe déjà.";
   if (/row-level security/i.test(m)) return "Action refusée. Vérifiez que votre stage est bien rattaché à votre compte.";
   if (/invalid login credentials/i.test(m)) return "Adresse e-mail ou mot de passe incorrect.";
@@ -117,4 +119,21 @@ function pastille(texte, ton) {
   s.className = "pastille " + (ton || "neutre");
   s.textContent = texte;
   return s;
+}
+
+/* ---------- Période d'un stage et ses semaines ---------- */
+// Lundis de toutes les semaines du stage : de la semaine du début jusqu'à la semaine de la date de fin.
+function semainesDuStage(s) {
+  const liste = [];
+  for (let l = lundiDe(s.date_debut); l <= s.date_fin; l = ajouterJours(l, 7)) liste.push(l);
+  return liste;
+}
+const periodeStage = (s) => dateFr(s.date_debut) + " - " + dateFr(s.date_fin);
+const lienStage = (page, s) => page + "?stage=" + encodeURIComponent(s.id);
+const bornerDate = (iso, min, max) => (iso < min ? min : iso > max ? max : iso);
+
+// Stage demandé dans l'adresse (?stage=...), sinon le stage affiché par défaut.
+function stageDemande(stages) {
+  const id = new URLSearchParams(location.search).get("stage");
+  return stages.find((x) => x.id === id) || periodeParDefaut(stages);
 }
