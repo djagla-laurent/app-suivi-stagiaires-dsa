@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mon bilan de la semaine</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="theme.js"></script>
+</head>
+<body>
+  <main class="page narrow">
+    <div class="barre">
+      <h1>Mon bilan de la semaine</h1>
+      <a id="retour" href="espace.html">Retour à mon espace</a>
+    </div>
+
+    <section id="vue-aucun" class="card" hidden>
+      <p id="txt-aucun"></p>
+    </section>
+
+    <div id="vue-bilan" hidden>
+      <p id="stage-info" class="info-stage"></p>
+
+      <div class="nav-semaine">
+        <button id="prec" class="nav-btn nav-prec" aria-label="Semaine précédente">Précédente</button>
+        <strong id="semaine"></strong>
+        <button id="suiv" class="nav-btn nav-suiv" aria-label="Semaine suivante">Suivante</button>
+      </div>
+
+      <form id="form" class="card" autocomplete="off">
+        <div class="statut-ligne"><span>Statut</span><span id="statut"></span></div>
+        <p id="info-futur" class="note" hidden>Cette semaine n'a pas encore commencé : vous pourrez rédiger son bilan dès son début.</p>
+        <p id="commentaire" class="note" hidden></p>
+
+        <label>Activités réalisées
+          <textarea id="activites" rows="6" required maxlength="3000"></textarea>
+        </label>
+        <label>Compétences ou connaissances acquises
+          <textarea id="acquis" rows="3" maxlength="2000"></textarea>
+        </label>
+        <label>Difficultés rencontrées
+          <textarea id="difficultes" rows="3" maxlength="2000"></textarea>
+        </label>
+        <label>Objectifs de la semaine suivante
+          <textarea id="objectifs" rows="3" maxlength="2000"></textarea>
+        </label>
+
+        <div id="boutons" style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button type="button" id="brouillon">Enregistrer en brouillon</button>
+          <button type="submit" id="soumettre" class="principal">Soumettre le bilan</button>
+        </div>
+        <p id="message" class="message" role="status"></p>
+      </form>
+
+      <h2 style="margin-top:28px;">Les semaines de ce stage</h2>
+      <div id="historique" class="hist"></div>
+    </div>
+  </main>
+
+  <script src="supabase.min.js"></script>
+  <script src="config.js"></script>
+  <script src="commun.js"></script>
+  <script>
+    const CHAMPS = ["activites", "acquis", "difficultes", "objectifs"];
+    const lundiCourant = lundiDe(aujourdhui());
+    let uid = null;
+    let stage = null;
+    let semaines = [];   // lundis des semaines du stage, de la semaine de début à celle de la date de fin
+    let lundi = null;    // semaine affichée
+    let bilans = [];
+
+    // Dernière semaine dont le bilan peut être consulté ou rédigé : la semaine en cours, ou la dernière
+    // semaine du stage s'il est terminé. Si le stage n'a pas commencé : la première (en lecture seule).
+    function derniereSemaineAccessible() {
+      const passees = semaines.filter((l) => l <= lundiCourant);
+      return passees.length ? passees[passees.length - 1] : semaines[0];
+    }
+
+    function aucun(texte) {
+      $("txt-aucun").textContent = texte;
+      $("vue-aucun").hidden = false;
+    }
+
+    async function demarrer() {
+      const { data } = await db.auth.getSession();
+      if (!data.session) { location.replace("connexion.html"); return; }
+      uid = data.session.user.id;
+
+      const r = await db.from("stages").select("*").eq("user_id", uid).order("date_debut", { ascending: false });
+      if (r.error) { console.error(r.error); aucun("Impossible de charger votre stage. Réessayez plus tard."); return; }
+      if (!r.data.length) { aucun("Aucun stage n'est rattaché à votre compte pour le moment."); return; }
+
+      stage = stageDemande(r.data);
+      semaines = semainesDuStage(stage);
+      $("retour").href = lienStage("espace.html", stage);
+      $("stage-info").textContent = "Stage du " + dateFr(stage.date_debut) + " au " + dateFr(stage.date_fin) +
+        " · " + semaines.length + " semaine" + (semaines.length > 1 ? "s" : "");
+
+      // Semaine proposée : la semaine en cours, ou la dernière du stage s'il est terminé.
+      lundi = derniereSemaineAccessible();
+      $("vue-bilan").hidden = false;
+      await charger();
+    }
+
+    async function charger() {
+      const { data, error } = await db.from("bilans")
+        .select("*")
+        .eq("user_id", uid)
+        .order("semaine_debut", { ascending: false });
+      if (error) {
+        console.error(error);
+        dire("message", "Impossible de charger vos bilans.", "erreur");
+        return;
+      }
+      bilans = data.filter((b) => semaines.includes(b.semaine_debut));
+      afficher();
+    }
+
+    const courant = () => bilans.find((b) => b.semaine_debut === lundi);
+
+    function afficher() {
+      const n = semaines.indexOf(lundi) + 1;
+      const numero = document.createElement("span");
+      numero.textContent = "Semaine " + n + " sur " + semaines.length;
+      const dates = document.createElement("small");
+      dates.textContent = "du " + periodeSemaine(lundi);
+      $("semaine").replaceChildren(numero, dates);
+      $("prec").disabled = n <= 1;
+      $("suiv").disabled = lundi >= derniereSemaineAccessible();
+
+      const b = courant();
+      const futur = lundi > lundiCourant;
+      CHAMPS.forEach((c) => { $(c).value = b ? b[c] : ""; });
+
+      const modifiable = !futur && (!b || b.statut === "brouillon" || b.statut === "a_corriger");
+      CHAMPS.forEach((c) => { $(c).disabled = !modifiable; });
+      $("boutons").hidden = !modifiable;
+      $("info-futur").hidden = !futur;
+
+      $("statut").replaceChildren(
+        futur ? pastille("À venir", "neutre")
+          : b ? pastille(STATUTS_BILAN[b.statut], TON_BILAN[b.statut])
+          : pastille("Non rédigé", "neutre"));
+
+      const avis = b && b.commentaire_admin ? "Commentaire de l'administration : " + b.commentaire_admin : "";
+      $("commentaire").textContent = avis;
+      $("commentaire").hidden = !avis;
+      $("commentaire").className = "note" + (b && b.statut === "a_corriger" ? " a-corriger" : "");
+      dire("message", "");
+      historique();
+    }
+
+    function historique() {
+      const zone = $("historique");
+      zone.replaceChildren();
+      semaines.forEach((l, i) => {
+        const b = bilans.find((x) => x.semaine_debut === l);
+        const bouton = document.createElement("button");
+        bouton.type = "button";
+        bouton.className = "hist-item" + (l === lundi ? " actif" : "");
+
+        const libelle = document.createElement("span");
+        libelle.textContent = "Semaine " + (i + 1) + " : " + periodeSemaine(l);
+
+        let etat;
+        if (b) etat = pastille(STATUTS_BILAN[b.statut], TON_BILAN[b.statut]);
+        else if (l > lundiCourant) etat = pastille("À venir", "neutre");
+        else if (l === lundiCourant) etat = pastille("Non rédigé", "attente");
+        else etat = pastille("Manquant", "ko");
+
+        bouton.append(libelle, etat);
+        if (l > lundiCourant) {   // semaine pas encore arrivée : pas de bilan possible
+          bouton.disabled = true;
+          bouton.title = "Cette semaine n'a pas encore commencé";
+        }
+        bouton.addEventListener("click", () => { lundi = l; afficher(); window.scrollTo(0, 0); });
+        zone.appendChild(bouton);
+      });
+    }
+
+    $("prec").addEventListener("click", () => {
+      const i = semaines.indexOf(lundi);
+      if (i > 0) { lundi = semaines[i - 1]; afficher(); }
+    });
+    $("suiv").addEventListener("click", () => {
+      const i = semaines.indexOf(lundi);
+      if (lundi < derniereSemaineAccessible()) { lundi = semaines[i + 1]; afficher(); }
+    });
+
+    async function enregistrer(statut) {
+      if (lundi > lundiCourant) {
+        dire("message", "Cette semaine n'a pas encore commencé : son bilan ne peut pas être rédigé.", "erreur");
+        return;
+      }
+      const valeurs = {};
+      CHAMPS.forEach((c) => { valeurs[c] = $(c).value.trim(); });
+      if (!valeurs.activites) {
+        dire("message", "Décrivez au moins les activités réalisées.", "erreur");
+        return;
+      }
+      if (statut === "soumis" && !confirm("Soumettre ce bilan ? Vous ne pourrez plus le modifier sauf si l'administration demande une correction.")) return;
+
+      $("brouillon").disabled = $("soumettre").disabled = true;
+      const b = courant();
+      const { error } = b
+        ? await db.from("bilans").update({ ...valeurs, statut }).eq("id", b.id)
+        : await db.from("bilans").insert({ user_id: uid, semaine_debut: lundi, ...valeurs, statut });
+      $("brouillon").disabled = $("soumettre").disabled = false;
+
+      if (error) {
+        console.error(error);
+        dire("message", messageErreur(error), "erreur");
+        return;
+      }
+      await charger();
+      dire("message", statut === "soumis" ? "Bilan soumis. Merci." : "Brouillon enregistré.", "ok");
+    }
+
+    $("brouillon").addEventListener("click", () => enregistrer("brouillon"));
+    $("form").addEventListener("submit", (e) => { e.preventDefault(); enregistrer("soumis"); });
+
+    demarrer();
+  </script>
+</body>
+</html>
