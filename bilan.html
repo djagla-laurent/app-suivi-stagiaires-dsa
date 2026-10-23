@@ -32,8 +32,20 @@
         <p id="info-futur" class="note" hidden>Cette semaine n'a pas encore commencé. Vous pourrez rédiger son bilan dès son début.</p>
         <p id="commentaire" class="note" hidden></p>
 
-        <label>Activités réalisées
-          <textarea id="activites" rows="6" required maxlength="3000"></textarea>
+        <label>Activités réalisés
+          <select id="niveau" required>
+            <option value="">-- Choisir --</option>
+            <option value="A1">Constituer et organiser des bases de données</option>
+            <option value="A2">Faire de la tabulation</option>
+            <option value="A3">Faire des analyses dans Excel et présenter les résultats dans Word</option>
+            <option value="A4">Produire des statistiques descriptives avec les logiciels statistiques stata, etc</option>
+            <option value="A5">Ecrire un rapport d'activité</option>
+            <option value="A6">Elaborer des notes de conjectures</option>
+            <option value="A7">Elaborer un manuel d'instruction</option>
+            <option value="A8">Faire un annuaire statistique</option>
+            <option value="A9">Elaborer un protocole de recherche</option>
+            <option value="A10">Elaborer une note thématique</option>
+          </select>
         </label>
         <label>Compétences ou connaissances acquises
           <textarea id="acquis" rows="3" maxlength="2000"></textarea>
