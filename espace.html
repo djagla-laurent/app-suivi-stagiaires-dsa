@@ -127,7 +127,7 @@
 
 
       let texte = "";
-      if (aCorriger) texte = "Un bilan est à corriger : semaine du " + dateFr(aCorriger.semaine_debut) + ".";
+      if (aCorriger) texte = "Un bilan est à corriger. Semaine du " + dateFr(aCorriger.semaine_debut) + ".";
       else if (enCours && !actuel) texte = "Le bilan de la semaine en cours n'est pas encore rédigé.";
       else if (enCours && actuel.statut === "brouillon") texte = "Le bilan de la semaine en cours est en brouillon. Pensez à le soumettre.";
       $("alerte-bilan").textContent = texte;
