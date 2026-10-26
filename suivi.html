@@ -437,7 +437,7 @@
       $("bil-titre").textContent = l.nom + " : semaine du " + periodeSemaine(lundi);
       const zone = $("bil-contenu");
       zone.replaceChildren();
-      bloc(zone, "Sorties, week-ends, missions", l.sorties.map(texteMouvement).join("\n"));
+      bloc(zone, "Sorties, permissions", l.sorties.map(texteMouvement).join("\n"));
       bloc(zone, "Absences, retards", l.absences.map(texteMouvement).join("\n"));
       if (l.bilan) {
         bloc(zone, "Statut du bilan", STATUTS_BILAN[l.bilan.statut]);
@@ -567,7 +567,7 @@
       const aViser = toutes.filter((l) => cleMensuelle(l) === "soumis").length;
       const manquants = toutes.filter((l) => cleMensuelle(l) === "manquant").length;
       $("compteur-mensuel").textContent = erreurMensuel
-        ? "Les bilans mensuels ne sont pas encore disponibles : exécutez le script supabase-evaluations.sql dans Supabase."
+        ? "Les bilans mensuels ne sont pas encore disponibles. Exécutez le script supabase-evaluations.sql dans Supabase."
         : lignes.length + " affiché(s) · " + aViser + " à viser · " + manquants + " manquant(s)";
     }
     ["filtre-mensuel", "rech-mensuel"].forEach((id) => $(id).addEventListener("input", afficherMensuel));
