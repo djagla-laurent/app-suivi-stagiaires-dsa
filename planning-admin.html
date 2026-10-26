@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plannings des stagiaires</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="theme.js"></script>
+</head>
+<body>
+  <main class="page">
+    <div class="entete">
+      <h1>Plannings des stagiaires</h1>
+      <div>
+        <a href="admin.html" style="margin-right:12px;">Stages enregistrés</a>
+        <a href="suivi.html" style="margin-right:12px;">Mouvements et bilans</a>
+        <a href="index.html">Accueil</a>
+      </div>
+    </div>
+
+    <p id="msg-acces" class="message" role="status"></p>
+
+    <section id="vue" hidden>
+      <div class="outils">
+        <label>Stagiaire
+          <select id="stage"></select>
+        </label>
+      </div>
+
+      <form id="form" class="card" autocomplete="off">
+        <h2 id="titre-form">Nouveau planning</h2>
+        <label>Type de planning
+          <select id="type" required>
+            <option value="">-- Choisir --</option>
+            <option value="trimestriel">Trimestriel</option>
+            <option value="mensuel">Mensuel</option>
+          </select>
+        </label>
+        <div class="ligne">
+          <label>Du
+            <input id="debut" type="date" required>
+          </label>
+          <label>Au
+            <input id="fin" type="date" required>
+          </label>
+        </div>
+        <div class="champ">
+          <span class="etiquette">Activités prévues</span>
+          <div id="zone-activites"></div>
+        </div>
+        <label>Objectifs de la période
+          <textarea id="objectifs" rows="4" maxlength="2000"></textarea>
+        </label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button type="submit" id="envoyer" class="principal">Enregistrer le planning</button>
+          <button type="button" id="annuler" hidden>Annuler la modification</button>
+        </div>
+        <p id="message" class="message" role="status"></p>
+      </form>
+
+      <h2 style="margin-top:28px;">Plannings de ce stage</h2>
+      <div id="liste" class="liste-cartes"></div>
+      <p id="vide" class="compteur" hidden>Aucun planning pour ce stage.</p>
+    </section>
+  </main>
+
+  <script src="supabase.min.js"></script>
+  <script src="config.js"></script>
+  <script src="commun.js"></script>
+  <script>
+    const liste = listeActivites($("zone-activites"));
+    let stages = [];
+    let plannings = [];
+    let idEdition = null;
+    let finAuto = "";
+
+    const LIBELLES = { trimestriel: "Trimestriel", mensuel: "Mensuel" };
+    const courant = () => stages.find((s) => s.id === $("stage").value);
+
+    function el(tag, texte) {
+      const e = document.createElement(tag);
+      if (texte) e.textContent = texte;
+      return e;
+    }
+
+    async function demarrer() {
+      const { data } = await db.auth.getSession();
+      if (!data.session) { location.replace("admin.html"); return; }
+      const { data: estAdmin } = await db.rpc("est_admin");
+      if (estAdmin !== true) { location.replace("admin.html"); return; }
+
+      const { data: s, error } = await db.from("stages")
+        .select("id, nom_prenoms, date_debut, date_fin")
+        .order("nom_prenoms", { ascending: true });
+      if (error) { console.error(error); dire("msg-acces", "Impossible de charger les stagiaires.", "erreur"); return; }
+      stages = s;
+      if (!stages.length) { dire("msg-acces", "Aucun stage enregistré pour le moment.", ""); return; }
+
+      const select = $("stage");
+      stages.forEach((x) => {
+        const o = document.createElement("option");
+        o.value = x.id;
+        o.textContent = x.nom_prenoms + " (" + dateFr(x.date_debut) + " - " + dateFr(x.date_fin) + ")";
+        select.appendChild(o);
+      });
+      const voulu = new URLSearchParams(location.search).get("stage");
+      if (voulu && stages.some((x) => x.id === voulu)) select.value = voulu;
+
+      $("vue").hidden = false;
+      nouveau();
+      charger();
+    }
+
+    async function charger() {
+      const st = courant();
+      if (!st) return;
+      const { data, error } = await db.from("plannings").select("*").eq("stage_id", st.id).order("periode_debut", { ascending: true });
+      if (error) { console.error(error); dire("message", "Impossible de charger les plannings.", "erreur"); return; }
+      plannings = data;
+      afficherListe();
+    }
+
+    function afficherListe() {
+      const zone = $("liste");
+      zone.replaceChildren();
+      $("vide").hidden = plannings.length > 0;
+      plannings.forEach((p) => {
+        const c = el("div");
+        c.className = "card";
+
+        const tete = el("div");
+        tete.className = "mouv-tete";
+        tete.append(el("strong", LIBELLES[p.type] + " : du " + dateFr(p.periode_debut) + " au " + dateFr(p.periode_fin)));
+        c.appendChild(tete);
+
+        if (p.activites_liste.length) {
+          const puces = el("div");
+          puces.className = "puces";
+          p.activites_liste.forEach((a) => { const s = el("span", a); s.className = "puce"; puces.appendChild(s); });
+          c.appendChild(puces);
+        }
+        if (p.objectifs) { const o = el("p", p.objectifs); o.style.whiteSpace = "pre-wrap"; c.appendChild(o); }
+
+        const actions = el("div");
+        actions.className = "mouv-actions";
+        const modif = el("button", "Modifier");
+        modif.addEventListener("click", () => modifier(p));
+        const suppr = el("button", "Supprimer");
+        suppr.className = "danger";
+        suppr.addEventListener("click", () => supprimer(p));
+        actions.append(modif, suppr);
+        c.appendChild(actions);
+        zone.appendChild(c);
+      });
+    }
+
+    /* ---------- Formulaire ---------- */
+    function nouveau() {
+      idEdition = null;
+      const st = courant();
+      $("titre-form").textContent = "Nouveau planning";
+      $("annuler").hidden = true;
+      $("type").value = "";
+      $("debut").value = st ? st.date_debut : "";
+      $("fin").value = "";
+      finAuto = "";
+      liste.set([]);
+      $("objectifs").value = "";
+    }
+
+    function modifier(p) {
+      idEdition = p.id;
+      $("titre-form").textContent = "Modifier le planning";
+      $("annuler").hidden = false;
+      $("type").value = p.type;
+      $("debut").value = p.periode_debut;
+      $("fin").value = p.periode_fin;
+      finAuto = "";
+      liste.set(p.activites_liste);
+      $("objectifs").value = p.objectifs;
+      dire("message", "");
+      window.scrollTo(0, 0);
+    }
+
+    // Fin proposée : un mois (mensuel) ou trois mois (trimestriel) moins un jour, sans dépasser la fin du stage.
+    function proposerFin() {
+      const st = courant();
+      if (!st || !$("type").value || !$("debut").value) return;
+      if ($("fin").value && $("fin").value !== finAuto) return;
+      const n = $("type").value === "trimestriel" ? 3 : 1;
+      finAuto = bornerDate(ajouterJours(ajouterMoisIso($("debut").value, n), -1), $("debut").value, st.date_fin);
+      $("fin").value = finAuto;
+    }
+    $("type").addEventListener("change", proposerFin);
+    $("debut").addEventListener("change", () => { finAuto = ""; $("fin").value = ""; proposerFin(); });
+    $("stage").addEventListener("change", () => { nouveau(); dire("message", ""); charger(); });
+    $("annuler").addEventListener("click", () => { nouveau(); dire("message", ""); });
+
+    $("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      dire("message", "");
+      const st = courant();
+      if ($("fin").value < $("debut").value) {
+        dire("message", "La date de fin ne peut pas être antérieure à la date de début.", "erreur");
+        return;
+      }
+      const choisies = liste.get();
+      const objectifs = $("objectifs").value.trim();
+      if (choisies.length === 0 && !objectifs) {
+        dire("message", "Choisissez au moins une activité ou renseignez les objectifs.", "erreur");
+        return;
+      }
+      const valeurs = {
+        type: $("type").value,
+        periode_debut: $("debut").value,
+        periode_fin: $("fin").value,
+        activites_liste: choisies,
+        objectifs
+      };
+      $("envoyer").disabled = true;
+      const { error } = idEdition
+        ? await db.from("plannings").update(valeurs).eq("id", idEdition)
+        : await db.from("plannings").insert({ stage_id: st.id, ...valeurs });
+      $("envoyer").disabled = false;
+      if (error) {
+        console.error(error);
+        dire("message", messageErreur(error), "erreur");
+        return;
+      }
+      nouveau();
+      dire("message", "Planning enregistré.", "ok");
+      charger();
+    });
+
+    async function supprimer(p) {
+      if (!confirm("Supprimer ce planning " + LIBELLES[p.type].toLowerCase() + " (" + dateFr(p.periode_debut) + " - " + dateFr(p.periode_fin) + ") ?")) return;
+      const { error } = await db.from("plannings").delete().eq("id", p.id);
+      if (error) { console.error(error); dire("message", "La suppression a échoué.", "erreur"); return; }
+      if (idEdition === p.id) nouveau();
+      dire("message", "Planning supprimé.", "ok");
+      charger();
+    }
+
+    demarrer();
+  </script>
+</body>
+</html>

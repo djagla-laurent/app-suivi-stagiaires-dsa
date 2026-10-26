@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mon planning</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="theme.js"></script>
+</head>
+<body>
+  <main class="page narrow">
+    <div class="barre">
+      <h1>Mon planning</h1>
+      <a id="retour" href="espace.html">Retour à mon espace</a>
+    </div>
+
+    <section id="vue-aucun" class="card" hidden>
+      <p id="txt-aucun"></p>
+    </section>
+
+    <div id="vue-planning" hidden>
+      <p id="stage-info" class="info-stage"></p>
+
+      <h2>Planning trimestriel</h2>
+      <div id="liste-trimestriel" class="liste-cartes"></div>
+      <p id="vide-trimestriel" class="compteur" hidden>Aucun planning trimestriel pour ce stage.</p>
+
+      <h2 style="margin-top:28px;">Planning mensuel</h2>
+      <div id="liste-mensuel" class="liste-cartes"></div>
+      <p id="vide-mensuel" class="compteur" hidden>Aucun planning mensuel pour ce stage.</p>
+    </div>
+  </main>
+
+  <script src="supabase.min.js"></script>
+  <script src="config.js"></script>
+  <script src="commun.js"></script>
+  <script>
+    function el(tag, texte) {
+      const e = document.createElement(tag);
+      if (texte) e.textContent = texte;
+      return e;
+    }
+
+    function aucun(texte) {
+      $("txt-aucun").textContent = texte;
+      $("vue-aucun").hidden = false;
+    }
+
+    function carte(p) {
+      const t = aujourdhui();
+      const c = el("div");
+      c.className = "card";
+
+      const tete = el("div");
+      tete.className = "mouv-tete";
+      const etat = p.periode_fin < t ? pastille("Terminé", "neutre")
+        : p.periode_debut > t ? pastille("À venir", "attente")
+        : pastille("En cours", "ok");
+      tete.append(el("strong", "Du " + dateFr(p.periode_debut) + " au " + dateFr(p.periode_fin)), etat);
+      c.appendChild(tete);
+
+      if (p.activites_liste.length) {
+        const puces = el("div");
+        puces.className = "puces";
+        p.activites_liste.forEach((a) => {
+          const s = el("span", a);
+          s.className = "puce";
+          puces.appendChild(s);
+        });
+        c.appendChild(puces);
+      }
+      if (p.objectifs) {
+        const o = el("p", p.objectifs);
+        o.style.whiteSpace = "pre-wrap";
+        c.appendChild(o);
+      }
+      return c;
+    }
+
+    async function demarrer() {
+      const { data } = await db.auth.getSession();
+      if (!data.session) { location.replace("connexion.html"); return; }
+
+      const r = await db.from("stages").select("*").eq("user_id", data.session.user.id).order("date_debut", { ascending: false });
+      if (r.error) { console.error(r.error); aucun("Impossible de charger votre stage. Réessayez plus tard."); return; }
+      if (!r.data.length) { aucun("Aucun stage n'est rattaché à votre compte pour le moment."); return; }
+
+      const stage = stageDemande(r.data);
+      $("retour").href = lienStage("espace.html", stage);
+      $("stage-info").textContent = "Stage du " + dateFr(stage.date_debut) + " au " + dateFr(stage.date_fin);
+
+      const rp = await db.from("plannings").select("*").eq("stage_id", stage.id).order("periode_debut", { ascending: true });
+      if (rp.error) { console.error(rp.error); aucun("Impossible de charger votre planning. Réessayez plus tard."); return; }
+
+      ["trimestriel", "mensuel"].forEach((type) => {
+        const liste = rp.data.filter((p) => p.type === type);
+        $("liste-" + type).replaceChildren(...liste.map(carte));
+        $("vide-" + type).hidden = liste.length > 0;
+      });
+      $("vue-planning").hidden = false;
+    }
+
+    demarrer();
+  </script>
+</body>
+</html>
