@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Créer mon compte stagiaire</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="theme.js"></script>
+</head>
+<body>
+  <main class="page narrow">
+    <h1>Créer mon compte stagiaire</h1>
+
+    <form id="form" class="card" autocomplete="off">
+      <label>Code de rattachement
+        <input id="code" required maxlength="20" placeholder="XXXXX-XXXXX" autocapitalize="characters">
+      </label>
+      <label>Adresse e-mail
+        <input id="email" type="email" required autocomplete="username">
+      </label>
+      <label>Mot de passe (8 caractères minimum)
+        <input id="mdp" type="password" required minlength="8" autocomplete="new-password">
+      </label>
+      <label>Confirmer le mot de passe
+        <input id="mdp2" type="password" required minlength="8" autocomplete="new-password">
+      </label>
+      <button type="submit" id="envoyer" class="principal">Créer mon compte</button>
+      <p id="message" class="message" role="status"></p>
+    </form>
+
+    <div class="liens-bas">
+      <p class="lien-texte">Vous n'avez pas encore de code ?</p>
+      <a class="btn-lien" href="stage.html">Renseigner d'abord mon stage</a>
+    </div>
+    <div class="liens-bas">
+      <p class="lien-texte">Vous avez déjà un compte ?</p>
+      <a class="btn-lien" href="connexion.html">Me connecter</a>
+      <a class="btn-lien retour" href="index.html">Accueil</a>
+    </div>
+  </main>
+
+  <script src="supabase.min.js"></script>
+  <script src="config.js"></script>
+  <script src="commun.js"></script>
+  <script>
+    const enregistre = localStorage.getItem("code_stage");
+    if (enregistre) $("code").value = formaterCode(enregistre);
+
+    $("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      dire("message", "");
+
+      if ($("mdp").value !== $("mdp2").value) {
+        dire("message", "Les deux mots de passe ne sont pas identiques.", "erreur");
+        return;
+      }
+
+      $("envoyer").disabled = true;
+      const code = $("code").value;
+      const { data, error } = await db.auth.signUp({
+        email: $("email").value.trim(),
+        password: $("mdp").value
+      });
+
+      if (error) {
+        $("envoyer").disabled = false;
+        console.error(error);
+        dire("message", messageErreur(error), "erreur");
+        return;
+      }
+
+      let rattache = false;
+      let cause = null;
+      if (data.session) {
+        const r = await db.rpc("rattacher_stage", { p_code: code });
+        rattache = r.data === true;
+        cause = r.error;
+        await db.auth.signOut();
+      } else {
+        // Confirmation par e-mail activée : le rattachement se fera à la première connexion.
+        localStorage.setItem("code_en_attente", code);
+        rattache = true;
+      }
+
+      if (rattache) {
+        localStorage.removeItem("code_stage");
+        location.href = "connexion.html?cree=1";
+      } else {
+        $("envoyer").disabled = false;
+        const raison = cause ? messageErreur(cause) : "Le code est introuvable ou déjà utilisé.";
+        dire("message", "Votre compte est créé, mais le stage n'a pas pu être rattaché : " + raison +
+          " Contactez l'administration pour faire rattacher votre stage à votre compte.", "erreur");
+        $("envoyer").hidden = true;
+      }
+    });
+  </script>
+</body>
+</html>
