@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mon espace stagiaire</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="theme.js"></script>
+</head>
+<body>
+  <main class="page narrow">
+    <div class="barre">
+      <h1>Mon espace</h1>
+      <button id="btn-deconnexion">Se déconnecter</button>
+    </div>
+
+    <section id="vue-stage" hidden>
+      <div class="card carte-etat">
+        <p id="etat" class="etat"></p>
+      </div>
+      <label id="bloc-periode" style="margin-top:16px;" hidden>Choisir une période de stage
+        <select id="periode"></select>
+      </label>
+    </section>
+
+    <section id="vue-vide" class="card" hidden>
+      <p>Aucun stage n'est rattaché à votre compte pour le moment.</p>
+    </section>
+
+    <p id="alerte-bilan" class="note-alerte" hidden></p>
+    <div class="actions-espace">
+      <button id="btn-bilan" class="principal">Mon bilan de la semaine</button>
+      <button id="btn-mensuel">Mon bilan du mois</button>
+      <button id="btn-mouvements">Mes mouvements</button>
+      <button id="btn-nouveau">Déclarer un nouveau stage</button>
+    </div>
+
+  </main>
+
+  <script src="supabase.min.js"></script>
+  <script src="config.js"></script>
+  <script src="commun.js"></script>
+  <script>
+    let uid = null;
+    let stages = [];
+
+    async function demarrer() {
+      const { data } = await db.auth.getSession();
+      if (!data.session) { location.replace("connexion.html"); return; }
+      uid = data.session.user.id;
+
+      // Rattachement différé (si la confirmation par e-mail était exigée à l'inscription)
+      const attente = localStorage.getItem("code_en_attente");
+      if (attente) {
+        await db.rpc("rattacher_stage", { p_code: attente });
+        localStorage.removeItem("code_en_attente");
+      }
+      charger();
+    }
+
+    async function charger() {
+      const { data, error } = await db.from("stages")
+        .select("*")
+        .eq("user_id", uid)
+        .order("date_debut", { ascending: false });
+      if (error) {
+        console.error(error);
+        $("vue-vide").hidden = false;
+        $("vue-vide").textContent = "Impossible de charger vos informations. Réessayez plus tard.";
+        return;
+      }
+      stages = data;
+      // Stage enregistré par l'administrateur : le stagiaire doit d'abord compléter ses informations.
+      if (stages.some((s) => !s.filiere)) { location.replace("stage.html"); return; }
+      const present = stages.length > 0;
+      $("vue-stage").hidden = !present;
+      $("vue-vide").hidden = present;
+      $("btn-bilan").disabled = $("btn-mensuel").disabled = $("btn-mouvements").disabled = !present;
+      if (!present) return;
+
+      const select = $("periode");
+      select.replaceChildren();
+      stages.forEach((s) => {
+        const o = document.createElement("option");
+        o.value = s.id;
+        o.textContent = dateFr(s.date_debut) + " - " + dateFr(s.date_fin);
+        select.appendChild(o);
+      });
+      select.value = stageDemande(stages).id;
+      $("bloc-periode").hidden = stages.length < 2;
+      afficher();
+    }
+
+    const choisi = () => stages.find((x) => x.id === $("periode").value);
+
+    function afficher() {
+      const s = choisi();
+      if (!s) return;
+      $("etat").textContent = messageStage(s);
+      verifierBilan(s);
+    }
+
+    $("periode").addEventListener("change", afficher);
+    $("btn-nouveau").addEventListener("click", () => { location.href = "stage.html"; });
+    // Le bilan et les mouvements concernent la période choisie dans la liste.
+    $("btn-bilan").addEventListener("click", () => { const s = choisi(); if (s) location.href = lienStage("bilan.html", s); });
+    $("btn-mensuel").addEventListener("click", () => { const s = choisi(); if (s) location.href = lienStage("bilan-mensuel.html", s); });
+    $("btn-mouvements").addEventListener("click", () => { const s = choisi(); if (s) location.href = lienStage("mouvements.html", s); });
+
+    // Rappel concernant les bilans du stage choisi uniquement.
+    async function verifierBilan(s) {
+      const { data } = await db.from("bilans")
+        .select("semaine_debut, statut")
+        .eq("user_id", uid)
+        .order("semaine_debut", { ascending: false })
+        .limit(300);
+      const { data: mensuels } = await db.from("bilans_mensuels")
+        .select("mois_debut, statut")
+        .eq("user_id", uid)
+        .limit(100);
+      if (!data || s.id !== $("periode").value) return;
+
+      const semaines = semainesDuStage(s);
+      const duStage = data.filter((x) => semaines.includes(x.semaine_debut));
+      const aCorriger = duStage.find((x) => x.statut === "a_corriger");
+      const t = aujourdhui();
+      const enCours = t >= semaines[0] && t <= s.date_fin;
+      const actuel = duStage.find((x) => x.semaine_debut === lundiDe(t));
+
+      const debutsMois = moisDuStage(s).map((m) => m.debut);
+      const mensuelACorriger = (mensuels || []).find((x) => debutsMois.includes(x.mois_debut) && x.statut === "a_corriger");
+
+      let texte = "";
+      if (aCorriger) texte = "Un bilan est à corriger : semaine du " + dateFr(aCorriger.semaine_debut) + ".";
+      else if (mensuelACorriger) texte = "Un bilan mensuel est à corriger : mois du " + dateFr(mensuelACorriger.mois_debut) + ".";
+      else if (enCours && !actuel) texte = "Le bilan de la semaine en cours n'est pas encore rédigé.";
+      else if (enCours && actuel.statut === "brouillon") texte = "Le bilan de la semaine en cours est en brouillon : pensez à le soumettre.";
+      $("alerte-bilan").textContent = texte;
+      $("alerte-bilan").hidden = !texte;
+    }
+
+
+    $("btn-deconnexion").addEventListener("click", async () => {
+      await db.auth.signOut();
+      location.href = "index.html";
+    });
+
+    demarrer();
+  </script>
+</body>
+</html>
