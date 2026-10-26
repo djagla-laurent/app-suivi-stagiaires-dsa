@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mon bilan du mois</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="theme.js"></script>
+</head>
+<body>
+  <main class="page narrow">
+    <div class="barre">
+      <h1>Mon bilan du mois</h1>
+      <a id="retour" href="espace.html">Retour à mon espace</a>
+    </div>
+
+    <section id="vue-aucun" class="card" hidden>
+      <p id="txt-aucun"></p>
+    </section>
+
+    <div id="vue-bilan" hidden>
+      <p id="stage-info" class="info-stage"></p>
+
+      <div class="nav-semaine">
+        <button id="prec" class="nav-btn nav-prec" aria-label="Mois précédent">Précédent</button>
+        <strong id="mois-titre"></strong>
+        <button id="suiv" class="nav-btn nav-suiv" aria-label="Mois suivant">Suivant</button>
+      </div>
+
+      <form id="form" class="card" autocomplete="off">
+        <div class="statut-ligne"><span>Statut</span><span id="statut"></span></div>
+        <p id="info-futur" class="note" hidden>Ce mois n'a pas encore commencé : vous pourrez rédiger son bilan dès son début.</p>
+        <p id="commentaire" class="note" hidden></p>
+
+        <div class="champ">
+          <span class="etiquette">Activités réalisées</span>
+          <div id="zone-activites"></div>
+          <p id="ancien-texte" class="note" hidden></p>
+        </div>
+        <p class="note">Facultatif : indiquez ici les tâches que vos supérieurs vous ont demandé d'effectuer et qui ne figurent pas dans la liste ci-dessus.</p>
+        <label>Autres tâches confiées (hors liste)
+          <textarea id="autres_taches" rows="3" maxlength="2000"></textarea>
+        </label>
+        <label>Compétences ou connaissances acquises
+          <textarea id="acquis" rows="3" maxlength="2000"></textarea>
+        </label>
+        <label>Difficultés rencontrées
+          <textarea id="difficultes" rows="3" maxlength="2000"></textarea>
+        </label>
+        <label>Objectifs du mois suivant
+          <textarea id="objectifs" rows="3" maxlength="2000"></textarea>
+        </label>
+
+        <div id="boutons" style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button type="button" id="brouillon">Enregistrer en brouillon</button>
+          <button type="submit" id="soumettre" class="principal">Soumettre le bilan</button>
+        </div>
+        <p id="message" class="message" role="status"></p>
+      </form>
+
+      <h2 style="margin-top:28px;">Les mois de ce stage</h2>
+      <div id="historique" class="hist"></div>
+    </div>
+  </main>
+
+  <script src="supabase.min.js"></script>
+  <script src="config.js"></script>
+  <script src="commun.js"></script>
+  <script>
+    const CHAMPS = ["autres_taches", "acquis", "difficultes", "objectifs"];
+    const liste = listeActivites($("zone-activites"));
+    let uid = null;
+    let stage = null;
+    let mois = [];     // mois du stage : [{ debut, fin }]
+    let idx = 0;       // mois affiché
+    let bilans = [];
+
+    // Dernier mois dont le bilan peut être consulté ou rédigé : le mois en cours, ou le dernier mois
+    // du stage s'il est terminé. Si le stage n'a pas commencé : le premier (en lecture seule).
+    function dernierAccessible() {
+      let k = 0;
+      mois.forEach((m, i) => { if (m.debut <= aujourdhui()) k = i; });
+      return k;
+    }
+
+    function aucun(texte) {
+      $("txt-aucun").textContent = texte;
+      $("vue-aucun").hidden = false;
+    }
+
+    async function demarrer() {
+      const { data } = await db.auth.getSession();
+      if (!data.session) { location.replace("connexion.html"); return; }
+      uid = data.session.user.id;
+
+      const r = await db.from("stages").select("*").eq("user_id", uid).order("date_debut", { ascending: false });
+      if (r.error) { console.error(r.error); aucun("Impossible de charger votre stage. Réessayez plus tard."); return; }
+      if (!r.data.length) { aucun("Aucun stage n'est rattaché à votre compte pour le moment."); return; }
+
+      stage = stageDemande(r.data);
+      mois = moisDuStage(stage);
+      $("retour").href = lienStage("espace.html", stage);
+      $("stage-info").textContent = "Stage du " + dateFr(stage.date_debut) + " au " + dateFr(stage.date_fin) +
+        " · " + mois.length + " mois";
+
+      idx = dernierAccessible();
+      $("vue-bilan").hidden = false;
+      await charger();
+    }
+
+    async function charger() {
+      const { data, error } = await db.from("bilans_mensuels")
+        .select("*")
+        .eq("user_id", uid)
+        .order("mois_debut", { ascending: false });
+      if (error) {
+        console.error(error);
+        dire("message", "Impossible de charger vos bilans mensuels. Réessayez plus tard.", "erreur");
+        afficher();
+        return;
+      }
+      const debuts = mois.map((m) => m.debut);
+      bilans = data.filter((b) => debuts.includes(b.mois_debut));
+      afficher();
+    }
+
+    const courant = () => bilans.find((b) => b.mois_debut === mois[idx].debut);
+
+    function afficher() {
+      const m = mois[idx];
+      const numero = document.createElement("span");
+      numero.textContent = "Mois " + (idx + 1) + " sur " + mois.length;
+      const dates = document.createElement("small");
+      dates.textContent = "du " + periodeMois(m);
+      $("mois-titre").replaceChildren(numero, dates);
+      $("prec").disabled = idx <= 0;
+      $("suiv").disabled = idx >= dernierAccessible();
+
+      const b = courant();
+      const futur = m.debut > aujourdhui();
+      CHAMPS.forEach((c) => { $(c).value = b ? b[c] : ""; });
+
+      const modifiable = !futur && (!b || b.statut === "brouillon" || b.statut === "a_corriger");
+      CHAMPS.forEach((c) => { $(c).disabled = !modifiable; });
+      liste.set(b ? b.activites_liste : []);
+      liste.disable(!modifiable);
+      const ancien = b && !(b.activites_liste && b.activites_liste.length) && b.activites ? b.activites : "";
+      $("ancien-texte").textContent = ancien ? "Saisie précédente : " + ancien : "";
+      $("ancien-texte").hidden = !ancien;
+      $("boutons").hidden = !modifiable;
+      $("info-futur").hidden = !futur;
+
+      $("statut").replaceChildren(
+        futur ? pastille("À venir", "neutre")
+          : b ? pastille(STATUTS_BILAN[b.statut], TON_BILAN[b.statut])
+          : pastille("Non rédigé", "neutre"));
+
+      const avis = b && b.commentaire_admin ? "Commentaire de l'administration : " + b.commentaire_admin : "";
+      $("commentaire").textContent = avis;
+      $("commentaire").hidden = !avis;
+      $("commentaire").className = "note" + (b && b.statut === "a_corriger" ? " a-corriger" : "");
+      dire("message", "");
+      historique();
+    }
+
+    function historique() {
+      const zone = $("historique");
+      zone.replaceChildren();
+      mois.forEach((m, i) => {
+        const b = bilans.find((x) => x.mois_debut === m.debut);
+        const bouton = document.createElement("button");
+        bouton.type = "button";
+        bouton.className = "hist-item" + (i === idx ? " actif" : "");
+
+        const libelle = document.createElement("span");
+        libelle.textContent = "Mois " + (i + 1) + " : " + periodeMois(m);
+
+        const t = aujourdhui();
+        const enCours = m.debut <= t && t <= m.fin;
+        let etat;
+        if (b) etat = pastille(STATUTS_BILAN[b.statut], TON_BILAN[b.statut]);
+        else if (m.debut > t) etat = pastille("À venir", "neutre");
+        else if (enCours) etat = pastille("Non rédigé", "attente");
+        else etat = pastille("Manquant", "ko");
+
+        bouton.append(libelle, etat);
+        if (m.debut > t) {   // mois pas encore arrivé : pas de bilan possible
+          bouton.disabled = true;
+          bouton.title = "Ce mois n'a pas encore commencé";
+        }
+        bouton.addEventListener("click", () => { idx = i; afficher(); window.scrollTo(0, 0); });
+        zone.appendChild(bouton);
+      });
+    }
+
+    $("prec").addEventListener("click", () => { if (idx > 0) { idx--; afficher(); } });
+    $("suiv").addEventListener("click", () => { if (idx < dernierAccessible()) { idx++; afficher(); } });
+
+    async function enregistrer(statut) {
+      const m = mois[idx];
+      if (m.debut > aujourdhui()) {
+        dire("message", "Ce mois n'a pas encore commencé : son bilan ne peut pas être rédigé.", "erreur");
+        return;
+      }
+      const choisies = liste.get();
+      if (choisies.length === 0) {
+        dire("message", "Choisissez au moins une activité réalisée.", "erreur");
+        return;
+      }
+      const valeurs = { activites_liste: choisies, activites: choisies.join("\n") };
+      CHAMPS.forEach((c) => { valeurs[c] = $(c).value.trim(); });
+      if (statut === "soumis" && !confirm("Soumettre ce bilan ? Vous ne pourrez plus le modifier sauf si l'administration demande une correction.")) return;
+
+      $("brouillon").disabled = $("soumettre").disabled = true;
+      const b = courant();
+      const { error } = b
+        ? await db.from("bilans_mensuels").update({ ...valeurs, statut }).eq("id", b.id)
+        : await db.from("bilans_mensuels").insert({ user_id: uid, mois_debut: m.debut, ...valeurs, statut });
+      $("brouillon").disabled = $("soumettre").disabled = false;
+
+      if (error) {
+        console.error(error);
+        dire("message", messageErreur(error), "erreur");
+        return;
+      }
+      await charger();
+      dire("message", statut === "soumis" ? "Bilan soumis. Merci." : "Brouillon enregistré.", "ok");
+    }
+
+    $("brouillon").addEventListener("click", () => enregistrer("brouillon"));
+    $("form").addEventListener("submit", (e) => { e.preventDefault(); enregistrer("soumis"); });
+
+    demarrer();
+  </script>
+</body>
+</html>
