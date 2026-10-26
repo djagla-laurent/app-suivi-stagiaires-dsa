@@ -29,7 +29,7 @@
 
       <form id="form" class="card" autocomplete="off">
         <div class="statut-ligne"><span>Statut</span><span id="statut"></span></div>
-        <p id="info-futur" class="note" hidden>Ce mois n'a pas encore commencé : vous pourrez rédiger son bilan dès son début.</p>
+        <p id="info-futur" class="note" hidden>Ce mois n'a pas encore commencé. Vous pourrez rédiger son bilan dès son début.</p>
         <p id="commentaire" class="note" hidden></p>
 
         <div class="champ">
@@ -38,7 +38,7 @@
           <p id="ancien-texte" class="note" hidden></p>
         </div>
         <p class="note">Indiquez ici les tâches qui vous ont été confiées et qui ne figurent pas dans la liste ci-dessus.</p>
-        <label>Autres tâches confiées (hors liste)
+        <label>Autres tâches (hors liste)
           <textarea id="autres_taches" rows="3" maxlength="2000"></textarea>
         </label>
         <label>Compétences ou connaissances acquises
@@ -199,7 +199,7 @@
     async function enregistrer(statut) {
       const m = mois[idx];
       if (m.debut > aujourdhui()) {
-        dire("message", "Ce mois n'a pas encore commencé : son bilan ne peut pas être rédigé.", "erreur");
+        dire("message", "Ce mois n'a pas encore commencé. Son bilan ne peut pas être rédigé.", "erreur");
         return;
       }
       const choisies = liste.get();
@@ -209,7 +209,7 @@
       }
       const valeurs = { activites_liste: choisies, activites: choisies.join("\n") };
       CHAMPS.forEach((c) => { valeurs[c] = $(c).value.trim(); });
-      if (statut === "soumis" && !confirm("Soumettre ce bilan ? Vous ne pourrez plus le modifier sauf si l'administration demande une correction.")) return;
+      if (statut === "soumis" && !confirm("Voulez-vous soumettre ce bilan ? Vous ne pourrez plus le modifier sauf si l'administration demande une correction.")) return;
 
       $("brouillon").disabled = $("soumettre").disabled = true;
       const b = courant();
