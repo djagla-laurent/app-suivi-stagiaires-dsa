@@ -308,7 +308,7 @@ function listeExterieures(zone) {
     const d = champ("Date", "date", v.date);
     const o = champ("Objet de l'activité", "text", v.objet, 300);
     const l = champ("Lieu ou structure d'accueil", "text", v.lieu, 150);
-    const i = champ("Instruction donnée par (DSA)", "text", v.instruction, 150);
+    const i = champ("Instruction donnée par la DSA", "text", v.instruction, 150);
     const retirer = document.createElement("button");
     retirer.type = "button";
     retirer.textContent = "Retirer";
@@ -415,7 +415,7 @@ function syntheseMensuelle(pris, academique) {
     const l = pris.filter((b) => b[champ] && String(b[champ]).trim()).map((b) => [sem(b), String(b[champ]).trim()]);
     if (l.length) blocs.push(tableauBloc(titre, ["Semaine", entete], l));
   };
-  texte("Autres tâches (hors liste)", "autres_taches", "Tâches");
+  texte("Autres tâches hors liste", "autres_taches", "Tâches");
   texte("Travaux personnels", "travaux_perso", "Travaux");
 
   // Activités extérieures
