@@ -87,7 +87,7 @@
         <div class="tableau large">
           <table>
             <thead>
-              <tr><th>Stagiaire</th><th>Sorties, week-ends, missions</th><th>Absences, retards</th><th>Bilan</th><th></th></tr>
+              <tr><th>Stagiaire</th><th>Sorties, permissions</th><th>Absences, retards</th><th>Bilan</th><th></th></tr>
             </thead>
             <tbody id="corps-semaine"></tbody>
           </table>
@@ -500,7 +500,7 @@
     }
 
     $("btn-export").addEventListener("click", () => {
-      const entete = ["Stagiaire", "Semaine", "Sorties, week-ends, missions", "Absences, retards", "Statut du bilan",
+      const entete = ["Stagiaire", "Semaine", "Sorties, permissions", "Absences, retards", "Statut du bilan",
         "Activités réalisées", "Autres tâches confiées", "Travaux personnels", "Activités extérieures", "Suivi du mémoire",
         "Compétences acquises", "Difficultés", "Objectifs suivants", "Commentaire"];
       const rows = lignesSemaine().map((l) => {
