@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mon bilan du mois</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="theme.js"></script>
+</head>
+<body>
+  <main class="page narrow">
+    <div class="barre">
+      <h1>Mon bilan du mois</h1>
+      <a id="retour" href="espace.html">Retour à mon espace</a>
+    </div>
+
+    <section id="vue-aucun" class="card" hidden>
+      <p id="txt-aucun"></p>
+    </section>
+
+    <div id="vue-bilan" hidden>
+      <p id="stage-info" class="info-stage"></p>
+
+      <div class="nav-semaine">
+        <button id="prec" class="nav-btn nav-prec" aria-label="Mois précédent">Précédent</button>
+        <strong id="mois-titre"></strong>
+        <button id="suiv" class="nav-btn nav-suiv" aria-label="Mois suivant">Suivant</button>
+      </div>
+
+      <div class="card">
+        <div class="statut-ligne"><span>Semaines prises en compte</span><span id="couverture"></span></div>
+        <p class="note">Ce bilan est généré automatiquement à partir de vos bilans hebdomadaires soumis ou visés. Il n'y a rien à saisir : pour le compléter, rédigez et soumettez vos bilans de la semaine.</p>
+        <p id="vide" class="note" hidden></p>
+        <div id="contenu"></div>
+      </div>
+
+      <h2 style="margin-top:28px;">Les mois de ce stage</h2>
+      <div id="historique" class="hist"></div>
+    </div>
+  </main>
+
+  <script src="supabase.min.js"></script>
+  <script src="config.js"></script>
+  <script src="commun.js"></script>
+  <script>
+    let stage = null;
+    let semaines = [];   // lundis des semaines du stage
+    let mois = [];       // mois du stage : [{ debut, fin }]
+    let idx = 0;         // mois affiché
+    let bilans = [];     // bilans hebdomadaires du stagiaire pour ce stage
+
+    function dernierAccessible() {
+      let k = 0;
+      mois.forEach((m, i) => { if (m.debut <= aujourdhui()) k = i; });
+      return k;
+    }
+
+    function aucun(texte) {
+      $("txt-aucun").textContent = texte;
+      $("vue-aucun").hidden = false;
+    }
+
+    // Une semaine appartient au mois où tombe son lundi ; les semaines qui commencent avant le début
+    // du stage sont rattachées au premier mois.
+    function semainesDuMois(i) {
+      return semainesDuMoisStage(semaines, mois, i);
+    }
+
+    // Bilans hebdomadaires pris en compte : soumis ou visés.
+    function bilansDuMois(i) {
+      return semainesDuMois(i)
+        .map((l) => bilans.find((b) => b.semaine_debut === l))
+        .filter((b) => b && (b.statut === "soumis" || b.statut === "vise"));
+    }
+
+    async function demarrer() {
+      const { data } = await db.auth.getSession();
+      if (!data.session) { location.replace("connexion.html"); return; }
+      const uid = data.session.user.id;
+
+      const r = await db.from("stages").select("*").eq("user_id", uid).order("date_debut", { ascending: false });
+      if (r.error) { console.error(r.error); aucun("Impossible de charger votre stage. Réessayez plus tard."); return; }
+      if (!r.data.length) { aucun("Aucun stage n'est rattaché à votre compte pour le moment."); return; }
+
+      stage = stageDemande(r.data);
+      semaines = semainesDuStage(stage);
+      mois = moisDuStage(stage);
+      $("retour").href = lienStage("espace.html", stage);
+      $("stage-info").textContent = "Stage du " + dateFr(stage.date_debut) + " au " + dateFr(stage.date_fin) +
+        " · " + mois.length + " mois";
+
+      const rb = await db.from("bilans").select("*").eq("user_id", uid).order("semaine_debut", { ascending: true });
+      if (rb.error) { console.error(rb.error); aucun("Impossible de charger vos bilans. Réessayez plus tard."); return; }
+      bilans = rb.data.filter((b) => semaines.includes(b.semaine_debut));
+
+      idx = dernierAccessible();
+      $("vue-bilan").hidden = false;
+      afficher();
+    }
+
+    function el(tag, texte) {
+      const e = document.createElement(tag);
+      if (texte) e.textContent = texte;
+      return e;
+    }
+
+    function afficher() {
+      const m = mois[idx];
+      const numero = el("span", "Mois " + (idx + 1) + " sur " + mois.length);
+      const dates = el("small", "du " + periodeMois(m));
+      $("mois-titre").replaceChildren(numero, dates);
+      $("prec").disabled = idx <= 0;
+      $("suiv").disabled = idx >= dernierAccessible();
+
+      const futur = m.debut > aujourdhui();
+      const total = semainesDuMois(idx).length;
+      const pris = bilansDuMois(idx);
+
+      $("couverture").replaceChildren(futur ? pastille("À venir", "neutre")
+        : pastille(pris.length + " sur " + total, pris.length === total && total > 0 ? "ok" : pris.length > 0 ? "attente" : "neutre"));
+
+      $("vide").textContent = futur ? "Ce mois n'a pas encore commencé."
+        : pris.length === 0 ? "Aucun bilan hebdomadaire soumis pour ce mois pour le moment." : "";
+      $("vide").hidden = !$("vide").textContent;
+
+      const blocs = futur ? [] : syntheseMensuelle(pris, stage.type_stage === "Académique");
+      $("contenu").replaceChildren(...blocs);
+      historique();
+    }
+
+    function historique() {
+      const zone = $("historique");
+      zone.replaceChildren();
+      const t = aujourdhui();
+      mois.forEach((m, i) => {
+        const bouton = document.createElement("button");
+        bouton.type = "button";
+        bouton.className = "hist-item" + (i === idx ? " actif" : "");
+        const libelle = el("span", "Mois " + (i + 1) + " : " + periodeMois(m));
+
+        const total = semainesDuMois(i).length;
+        const n = bilansDuMois(i).length;
+        let etat;
+        if (m.debut > t) etat = pastille("À venir", "neutre");
+        else if (n === total && total > 0) etat = pastille(n + " sur " + total + " semaines", "ok");
+        else if (n > 0) etat = pastille(n + " sur " + total + " semaines", "attente");
+        else etat = pastille("Aucun bilan", m.fin < t ? "ko" : "neutre");
+
+        bouton.append(libelle, etat);
+        if (m.debut > t) {
+          bouton.disabled = true;
+          bouton.title = "Ce mois n'a pas encore commencé";
+        }
+        bouton.addEventListener("click", () => { idx = i; afficher(); window.scrollTo(0, 0); });
+        zone.appendChild(bouton);
+      });
+    }
+
+    $("prec").addEventListener("click", () => { if (idx > 0) { idx--; afficher(); } });
+    $("suiv").addEventListener("click", () => { if (idx < dernierAccessible()) { idx++; afficher(); } });
+
+    demarrer();
+  </script>
+</body>
+</html>
