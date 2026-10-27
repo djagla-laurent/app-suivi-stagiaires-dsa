@@ -415,7 +415,7 @@ function syntheseMensuelle(pris, academique) {
     const l = pris.filter((b) => b[champ] && String(b[champ]).trim()).map((b) => [sem(b), String(b[champ]).trim()]);
     if (l.length) blocs.push(tableauBloc(titre, ["Semaine", entete], l));
   };
-  texte("Autres tâches confiées (hors liste)", "autres_taches", "Tâches");
+  texte("Autres tâches (hors liste)", "autres_taches", "Tâches");
   texte("Travaux personnels", "travaux_perso", "Travaux");
 
   // Activités extérieures
@@ -423,7 +423,7 @@ function syntheseMensuelle(pris, academique) {
   pris.forEach((b) => (b.activites_ext || []).forEach((a) => ext.push(a)));
   ext.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   if (ext.length) {
-    blocs.push(tableauBloc("Activités extérieures (sur instruction de la DSA)",
+    blocs.push(tableauBloc("Activités extérieures sur instruction de la DSA",
       ["Date", "Objet", "Lieu ou structure", "Instruction donnée par"],
       ext.map((a) => [dateFr(a.date), a.objet, a.lieu || "—", a.instruction || "—"])));
   }
